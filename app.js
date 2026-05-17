@@ -549,6 +549,9 @@ function toggleDispatcherMode() {
   refreshModeButtons();
   refreshGrid();
   renderPanel();
+  requestAnimationFrame(() => {
+    document.getElementById("dispatcherPin")?.focus();
+  });
   showToast("Enter dispatcher PIN.");
 }
 
@@ -646,12 +649,12 @@ function renderDispatcherLogin() {
   return `
     <div class="divider"></div>
     <h3>Dispatcher Login</h3>
-    <div class="verification-row">
+    <form id="dispatcherLoginForm" class="verification-row dispatcher-login">
       <label>PIN
         <input id="dispatcherPin" inputmode="numeric" autocomplete="off" />
       </label>
-      <button id="dispatcherLoginBtn" class="button active" type="button">Enter dispatch</button>
-    </div>
+      <button id="dispatcherLoginBtn" class="button active" type="submit">Enter dispatch</button>
+    </form>
   `;
 }
 
@@ -661,20 +664,23 @@ function renderDispatcherDashboard() {
   const incidents = getOpenIncidents();
   const audit = state.audit.slice(-12).reverse();
   return `
-    <div class="divider"></div>
-    <h3>Dispatcher</h3>
-    <div class="button-row">
-      <button id="runStaleBtn" class="button warning" type="button">Run stale release</button>
-      <button id="exportAuditBtn" class="button" type="button">Export audit</button>
-    </div>
-    <div class="dashboard-strip">
-      ${dashboardList("Active", activeCells)}
-      ${dashboardList("Stale", staleCells)}
-    </div>
-    <h3>Incident Log</h3>
-    ${renderIncidentList(incidents)}
-    <h3>Audit Trail</h3>
-    ${renderAuditLog(audit)}
+    <section id="dispatcherDashboard" class="dispatcher-dashboard" tabindex="-1" aria-live="polite">
+      <div class="divider"></div>
+      <h3>Dispatcher</h3>
+      <p class="notice success"><strong>Dispatcher mode active.</strong> The PIN field closes after login. Use the top button to exit dispatch mode.</p>
+      <div class="button-row">
+        <button id="runStaleBtn" class="button warning" type="button">Run stale release</button>
+        <button id="exportAuditBtn" class="button" type="button">Export audit</button>
+      </div>
+      <div class="dashboard-strip">
+        ${dashboardList("Active", activeCells)}
+        ${dashboardList("Stale", staleCells)}
+      </div>
+      <h3>Incident Log</h3>
+      ${renderIncidentList(incidents)}
+      <h3>Audit Trail</h3>
+      ${renderAuditLog(audit)}
+    </section>
   `;
 }
 
@@ -776,9 +782,9 @@ function bindCommandPanel() {
     exportAuditBtn.addEventListener("click", exportAudit);
   }
 
-  const dispatcherLoginBtn = document.getElementById("dispatcherLoginBtn");
-  if (dispatcherLoginBtn) {
-    dispatcherLoginBtn.addEventListener("click", enterDispatcherMode);
+  const dispatcherLoginForm = document.getElementById("dispatcherLoginForm");
+  if (dispatcherLoginForm) {
+    dispatcherLoginForm.addEventListener("submit", enterDispatcherMode);
   }
 
   document.querySelectorAll("[data-jump-grid]").forEach((button) => {
@@ -786,7 +792,8 @@ function bindCommandPanel() {
   });
 }
 
-function enterDispatcherMode() {
+function enterDispatcherMode(event) {
+  event?.preventDefault();
   const pin = document.getElementById("dispatcherPin").value.trim();
   if (pin !== DISPATCHER_PIN) {
     addAudit("dispatcher_login_failed", null, {});
@@ -802,7 +809,12 @@ function enterDispatcherMode() {
   saveState();
   refreshModeButtons();
   renderPanel();
-  showToast("Dispatcher mode on.");
+  requestAnimationFrame(() => {
+    const dashboard = document.getElementById("dispatcherDashboard");
+    dashboard?.scrollIntoView({ block: "start", behavior: "smooth" });
+    dashboard?.focus({ preventScroll: true });
+  });
+  showToast("Dispatcher mode on. Dashboard is open.");
 }
 
 

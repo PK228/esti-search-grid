@@ -3,6 +3,8 @@
 Emergency search-grid prototype for the area bounded by Keele Street, Yonge
 Street, Steeles Avenue, and Eglinton Avenue in Toronto.
 
+Volunteer instructions are in [VOLUNTEER_README.md](VOLUNTEER_README.md).
+
 ## Run locally
 
 ```bash

@@ -7,7 +7,7 @@ function json(res, status, body) {
   res.setHeader("Content-Type", "application/json; charset=utf-8");
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, x-positions-key");
   res.end(JSON.stringify(body));
 }
 
@@ -133,6 +133,15 @@ module.exports = async function handler(req, res) {
 
   try {
     if (req.method === "GET") {
+      // Viewing volunteer locations is dispatcher-only: the request must carry
+      // the secret read key. The key lives only in POSITIONS_READ_KEY (a server
+      // env var) and in each dispatcher's head — never in the shipped app code.
+      const configured = process.env.POSITIONS_READ_KEY || "";
+      const provided = req.headers["x-positions-key"] || "";
+      if (!configured || provided !== configured) {
+        json(res, 403, { ok: false, error: "Location feed is restricted" });
+        return;
+      }
       const positions = prune(await redisGet());
       json(res, 200, { ok: true, positions: Object.values(positions) });
       return;

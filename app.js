@@ -2,6 +2,7 @@ const STORAGE_KEY = "toronto-search-grid-v2";
 const LEGACY_STORAGE_KEY = "toronto-search-grid-v1";
 const SESSION_KEY = "toronto-search-grid-session";
 const SESSION_STARTED_KEY = "toronto-search-grid-session-started";
+const POSITIONS_KEY_STORE = "esti-search-grid-positions-key";
 const DISPATCHER_PIN = "2468";
 const STALE_AFTER_MINUTES = 30;
 const HEARTBEAT_WARNING_MINUTES = 20;
@@ -102,6 +103,7 @@ let labelLayer;
 let volunteerLayer;
 let lastGpsFix = null;
 let positionSyncTimer = null;
+let positionsKey = localStorage.getItem(POSITIONS_KEY_STORE) || "";
 let gpsMarker;
 let gpsAccuracy;
 let gpsWatchId = null;
@@ -707,6 +709,29 @@ function renderDispatcherLogin() {
   `;
 }
 
+function renderLocationKeyControl() {
+  const unlocked = Boolean(positionsKey);
+  return `
+    <h3>Live volunteer map</h3>
+    <p class="muted tight">Volunteer GPS locations are private. Enter the dispatcher location key to show them on the map.</p>
+    <div class="verification-row">
+      <label>Location key
+        <input id="positionsKeyInput" type="password" autocomplete="off" value="${escapeAttr(
+          positionsKey,
+        )}" />
+      </label>
+      <button id="positionsKeyBtn" class="button active" type="button">${
+        unlocked ? "Update" : "Unlock"
+      }</button>
+    </div>
+    ${
+      unlocked
+        ? '<p class="notice success">Location feed unlocked on this device.</p>'
+        : ""
+    }
+  `;
+}
+
 function renderDispatcherDashboard() {
   const staleCells = getCellsByStatus("stale");
   const activeCells = getCellsByStatus("searching");
@@ -717,6 +742,7 @@ function renderDispatcherDashboard() {
       <div class="divider"></div>
       <h3>Dispatcher</h3>
       <p class="notice success"><strong>Dispatcher mode active.</strong> The PIN field closes after login. Use the top button to exit dispatch mode.</p>
+      ${renderLocationKeyControl()}
       <div class="button-row">
         <button id="runStaleBtn" class="button warning" type="button">Run stale release</button>
         <button id="exportAuditBtn" class="button" type="button">Export audit</button>
@@ -827,6 +853,11 @@ function bindCommandPanel() {
   const exportAuditBtn = document.getElementById("exportAuditBtn");
   if (exportAuditBtn) {
     exportAuditBtn.addEventListener("click", exportAudit);
+  }
+
+  const positionsKeyBtn = document.getElementById("positionsKeyBtn");
+  if (positionsKeyBtn) {
+    positionsKeyBtn.addEventListener("click", savePositionsKey);
   }
 
   const dispatcherLoginForm = document.getElementById("dispatcherLoginForm");
@@ -1795,11 +1826,20 @@ async function pushMyPosition() {
 }
 
 async function fetchVolunteerPositions() {
+  // Volunteer locations are dispatcher-only: with no key, never fetch or draw.
+  if (!positionsKey) {
+    renderVolunteerMarkers([]);
+    return;
+  }
   try {
     const response = await fetch(`${POSITIONS_API}?t=${Date.now()}`, {
       cache: "no-store",
+      headers: { "x-positions-key": positionsKey },
     });
     if (!response.ok) {
+      if (response.status === 403) {
+        renderVolunteerMarkers([]);
+      }
       return;
     }
     const payload = await response.json();
@@ -1807,6 +1847,36 @@ async function fetchVolunteerPositions() {
   } catch {
     // Keep the last drawn markers if a refresh fails.
   }
+}
+
+async function savePositionsKey() {
+  const value = document.getElementById("positionsKeyInput").value.trim();
+  positionsKey = value;
+  if (!value) {
+    localStorage.removeItem(POSITIONS_KEY_STORE);
+    renderVolunteerMarkers([]);
+    renderPanel();
+    showToast("Location key cleared.");
+    return;
+  }
+  localStorage.setItem(POSITIONS_KEY_STORE, value);
+  try {
+    const response = await fetch(`${POSITIONS_API}?t=${Date.now()}`, {
+      cache: "no-store",
+      headers: { "x-positions-key": value },
+    });
+    if (response.ok) {
+      const payload = await response.json();
+      renderVolunteerMarkers(Array.isArray(payload.positions) ? payload.positions : []);
+      showToast("Location feed unlocked.");
+    } else {
+      renderVolunteerMarkers([]);
+      showToast("Location key was rejected.");
+    }
+  } catch {
+    showToast("Could not reach the location feed.");
+  }
+  renderPanel();
 }
 
 function renderVolunteerMarkers(positions) {

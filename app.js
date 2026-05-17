@@ -287,7 +287,7 @@ function sharedPayload() {
 
 function setSharedSyncStatus(status, shouldRender = true) {
   sharedSyncStatus = status;
-  if (shouldRender && !activeCellId) {
+  if (shouldRender && !activeCellId && !dispatcherLoginOpen) {
     renderPanel();
   }
 }
@@ -336,7 +336,9 @@ function applySharedState(remote) {
   state.incidents = Array.isArray(remote.incidents) ? remote.incidents : [];
   saveLocalOnly();
   refreshGrid();
-  renderPanel();
+  if (!dispatcherLoginOpen) {
+    renderPanel();
+  }
 }
 
 function saveLocalOnly() {
@@ -570,8 +572,15 @@ function refreshModeButtons() {
     heatBtn.classList.toggle("active", heatMode);
   }
   if (dispatcherBtn) {
-    dispatcherBtn.textContent = state.profile.dispatcher ? "Exit dispatch" : "Dispatcher";
-    dispatcherBtn.classList.toggle("active", state.profile.dispatcher);
+    dispatcherBtn.textContent = state.profile.dispatcher
+      ? "Exit dispatch"
+      : dispatcherLoginOpen
+        ? "Cancel"
+        : "Dispatcher";
+    dispatcherBtn.classList.toggle(
+      "active",
+      state.profile.dispatcher || dispatcherLoginOpen,
+    );
   }
 }
 
@@ -595,15 +604,13 @@ function toggleDispatcherMode() {
     return;
   }
 
-  dispatcherLoginOpen = true;
-  activeCellId = null;
+  dispatcherLoginOpen = !dispatcherLoginOpen;
+  if (dispatcherLoginOpen) {
+    activeCellId = null;
+  }
   refreshModeButtons();
   refreshGrid();
   renderPanel();
-  requestAnimationFrame(() => {
-    document.getElementById("dispatcherPin")?.focus();
-  });
-  showToast("Enter dispatcher PIN.");
 }
 
 function selectCell(id) {
@@ -614,6 +621,11 @@ function selectCell(id) {
 
 function renderPanel() {
   const panel = document.getElementById("panel");
+  if (dispatcherLoginOpen && !state.profile.dispatcher) {
+    panel.innerHTML = renderDispatcherLogin();
+    bindDispatcherLogin();
+    return;
+  }
   if (!activeCellId) {
     panel.innerHTML = renderCommandPanel();
     bindCommandPanel();
@@ -687,7 +699,6 @@ function renderCommandPanel() {
         : ""
     }
 
-    ${dispatcherLoginOpen && !state.profile.dispatcher ? renderDispatcherLogin() : ""}
     ${state.profile.dispatcher ? renderDispatcherDashboard() : ""}
 
     <div class="divider"></div>
@@ -698,15 +709,32 @@ function renderCommandPanel() {
 
 function renderDispatcherLogin() {
   return `
-    <div class="divider"></div>
-    <h3>Dispatcher Login</h3>
-    <form id="dispatcherLoginForm" class="verification-row dispatcher-login">
-      <label>PIN
-        <input id="dispatcherPin" inputmode="numeric" autocomplete="off" />
-      </label>
-      <button id="dispatcherLoginBtn" class="button active" type="submit">Enter dispatch</button>
-    </form>
+    <button id="dispatcherCancelBtn" class="button" type="button">Back</button>
+    <div class="login-card">
+      <span class="login-badge">Restricted</span>
+      <h2>Dispatcher Login</h2>
+      <p class="muted">Dispatcher mode unlocks the command tools — stale release, audit export, the incident log, and the live volunteer map.</p>
+      <form id="dispatcherLoginForm" class="login-form">
+        <label>Dispatcher PIN
+          <input id="dispatcherPin" inputmode="numeric" autocomplete="off" placeholder="Enter PIN" />
+        </label>
+        <p id="dispatcherLoginError" class="notice danger" hidden></p>
+        <button class="button primary full" type="submit">Enter dispatcher mode</button>
+      </form>
+    </div>
   `;
+}
+
+function bindDispatcherLogin() {
+  document
+    .getElementById("dispatcherLoginForm")
+    .addEventListener("submit", enterDispatcherMode);
+  document.getElementById("dispatcherCancelBtn").addEventListener("click", () => {
+    dispatcherLoginOpen = false;
+    refreshModeButtons();
+    renderPanel();
+  });
+  requestAnimationFrame(() => document.getElementById("dispatcherPin")?.focus());
 }
 
 function renderLocationKeyControl() {
@@ -860,11 +888,6 @@ function bindCommandPanel() {
     positionsKeyBtn.addEventListener("click", savePositionsKey);
   }
 
-  const dispatcherLoginForm = document.getElementById("dispatcherLoginForm");
-  if (dispatcherLoginForm) {
-    dispatcherLoginForm.addEventListener("submit", enterDispatcherMode);
-  }
-
   document.querySelectorAll("[data-jump-grid]").forEach((button) => {
     button.addEventListener("click", () => selectCell(button.dataset.jumpGrid));
   });
@@ -872,11 +895,18 @@ function bindCommandPanel() {
 
 function enterDispatcherMode(event) {
   event?.preventDefault();
-  const pin = document.getElementById("dispatcherPin").value.trim();
+  const pinInput = document.getElementById("dispatcherPin");
+  const pin = pinInput.value.trim();
   if (pin !== DISPATCHER_PIN) {
     addAudit("dispatcher_login_failed", null, {});
     saveState();
-    showToast("Dispatcher PIN rejected.");
+    const error = document.getElementById("dispatcherLoginError");
+    if (error) {
+      error.textContent = "That PIN didn't match. Try again.";
+      error.hidden = false;
+    }
+    pinInput.value = "";
+    pinInput.focus();
     return;
   }
 
@@ -1267,7 +1297,9 @@ function scanStaleCells(options = {}) {
   if (released || removedSearchers) {
     saveState();
     refreshGrid();
-    renderPanel();
+    if (!dispatcherLoginOpen) {
+      renderPanel();
+    }
   }
 
   if (options.manual) {

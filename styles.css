@@ -63,6 +63,38 @@ select {
   min-width: 220px;
 }
 
+.hotline-bar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 36px;
+  padding: 6px 14px;
+  background: var(--red);
+  color: #fff;
+  text-decoration: none;
+  z-index: 600;
+}
+
+.hotline-bar:hover,
+.hotline-bar:focus-visible {
+  background: #a81818;
+  outline: 2px solid transparent;
+}
+
+.hotline-label {
+  font-size: 13px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.hotline-number {
+  font-size: 16px;
+  font-weight: 900;
+  letter-spacing: 0.4px;
+}
+
 .eyebrow {
   margin: 0 0 3px;
   color: var(--muted);

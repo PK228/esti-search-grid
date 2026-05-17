@@ -180,7 +180,7 @@ function loadState() {
     }
     const saved = JSON.parse(raw);
     return {
-      cells: saved.cells || {},
+      cells: normalizeCells(saved.cells || {}),
       profile: { ...defaultProfile(), ...(saved.profile || {}) },
       audit: Array.isArray(saved.audit) ? saved.audit : [],
       incidents: Array.isArray(saved.incidents) ? saved.incidents : [],
@@ -205,6 +205,37 @@ function defaultProfile() {
     createdAt: "",
     lastSeenAt: "",
   };
+}
+
+function normalizeCells(cells) {
+  if (!cells || typeof cells !== "object") {
+    return {};
+  }
+  Object.values(cells).forEach((cell) => {
+    if (!cell || typeof cell !== "object") {
+      return;
+    }
+    if (!Array.isArray(cell.searchers)) {
+      // Migrate legacy single-owner cells into a one-person searcher list.
+      if (cell.status === "searching" && cell.userId) {
+        cell.searchers = [
+          {
+            userId: cell.userId,
+            sessionId: cell.sessionId || "",
+            name: cell.name || "",
+            contact: cell.contact || "",
+            team: cell.team || "",
+            phoneVerified: Boolean(cell.phoneVerified),
+            joinedAt: cell.assignedAt || cell.updatedAt || cell.createdAt || "",
+            lastHeartbeatAt: cell.lastHeartbeatAt || cell.updatedAt || "",
+          },
+        ];
+      } else {
+        cell.searchers = [];
+      }
+    }
+  });
+  return cells;
 }
 
 function ensureIdentity() {
@@ -286,7 +317,9 @@ function applySharedState(remote) {
     return;
   }
 
-  state.cells = remote.cells && typeof remote.cells === "object" ? remote.cells : {};
+  state.cells = normalizeCells(
+    remote.cells && typeof remote.cells === "object" ? remote.cells : {},
+  );
   state.audit = Array.isArray(remote.audit) ? remote.audit : [];
   state.incidents = Array.isArray(remote.incidents) ? remote.incidents : [];
   saveLocalOnly();
@@ -484,13 +517,16 @@ function renderLabels() {
 
   cellFeatures.forEach((feature) => {
     const [lng, lat] = feature.properties.center;
+    const id = feature.properties.id;
+    const count = searcherCount(state.cells[id]);
+    const badge = count > 0 ? `<span class="cell-count">${count}</span>` : "";
     const label = L.marker([lat, lng], {
       interactive: false,
       icon: L.divIcon({
         className: "cell-label",
-        html: feature.properties.id,
-        iconSize: [34, 18],
-        iconAnchor: [17, 9],
+        html: `<span class="cell-id">${id}</span>${badge}`,
+        iconSize: [46, 20],
+        iconAnchor: [23, 10],
       }),
     });
     labelLayer.addLayer(label);
@@ -592,7 +628,7 @@ function renderCommandPanel() {
       ${metricItem(`${analytics.coverage}%`, "Coverage")}
       ${metricItem(counts.stale, "Stale released")}
       ${metricItem(analytics.openIncidents, "Open incidents")}
-      ${metricItem(analytics.duplicateBlocks, "Duplicate blocks")}
+      ${metricItem(analytics.volunteersSearching, "Volunteers out")}
     </div>
 
     <h3>Volunteer Identity</h3>
@@ -689,21 +725,20 @@ function renderCellPanel(id) {
   const statusKey = entry.status || "open";
   const status = STATUS[statusKey] || STATUS.open;
   const activeIncident = getOpenIncidentForGrid(id);
-  const heldByAnother = isHeldByAnother(entry);
+  const searchers = getSearchers(entry);
   const heartbeatAge = entry.lastHeartbeatAt
     ? formatRelativeAge(entry.lastHeartbeatAt)
     : "None";
   const staleEta = entry.status === "searching" ? getStaleEta(entry) : "";
-  const name = entry.name ?? state.profile.name ?? "";
-  const contact = entry.contact ?? state.profile.contact ?? "";
-  const team = entry.team ?? state.profile.team ?? "";
+  const name = state.profile.name || "";
+  const contact = state.profile.contact || "";
+  const team = state.profile.team || "";
   const notes = entry.notes ?? "";
 
   return `
     <button id="backBtn" class="button" type="button">Back</button>
     <h2 style="margin-top: 16px;">Grid ${id}</h2>
     <span class="status-pill ${status.className}">${status.label}</span>
-    ${heldByAnother ? renderDuplicateNotice(entry) : ""}
     ${
       activeIncident
         ? `<p class="notice danger"><strong>${escapeHtml(
@@ -712,25 +747,24 @@ function renderCellPanel(id) {
         : ""
     }
 
+    ${renderSearcherList(searchers)}
+
     <dl class="meta-list">
-      ${metaRow("Volunteer", entry.name || "Unassigned")}
-      ${metaRow("Contact", entry.contact || "None")}
-      ${metaRow("Team", entry.team || "None")}
+      ${metaRow("People searching", String(searchers.length))}
       ${metaRow("Updated", entry.updatedAt ? formatTime(entry.updatedAt) : "Never")}
-      ${metaRow("Heartbeat", heartbeatAge)}
+      ${metaRow("Last heartbeat", heartbeatAge)}
       ${staleEta ? metaRow("Auto-release", staleEta) : ""}
-      ${metaRow("Session", entry.sessionId ? shortId(entry.sessionId) : "None")}
     </dl>
 
     <form id="cellForm" class="cell-form">
-      <label>Name
+      <label>Your name
         <input id="cellName" autocomplete="name" value="${escapeAttr(name)}" />
       </label>
       <div class="field-row">
-        <label>Phone
+        <label>Your phone
           <input id="cellContact" autocomplete="tel" value="${escapeAttr(contact)}" />
         </label>
-        <label>Team
+        <label>Your team
           <input id="cellTeam" value="${escapeAttr(team)}" />
         </label>
       </div>
@@ -938,99 +972,96 @@ function updateCell(id, status) {
   const existing = state.cells[id] || {};
   const actorFields = saveProfileFromCellForm();
   const notes = document.getElementById("cellNotes").value.trim();
-  const heldByAnother = isHeldByAnother(existing);
   const now = new Date().toISOString();
-
-  if (shouldBlockCellUpdate(existing, status)) {
-    addAudit("duplicate_or_unauthorized_update_blocked", id, {
-      attemptedStatus: status,
-      currentStatus: existing.status || "open",
-      currentOwner: ownerSnapshot(existing),
-    });
-    saveState();
-    renderPanel();
-    showToast(`Grid ${id} is already assigned. Ask dispatch to release it.`);
-    return;
-  }
-
-  const preserveOwner =
-    heldByAnother && ESCALATION_STATUSES.has(status) && !state.profile.dispatcher;
   const previousStatus = existing.status || "open";
-  const owner = preserveOwner
-    ? {
-        name: existing.name || "",
-        contact: existing.contact || "",
-        team: existing.team || "",
-        userId: existing.userId || "",
-        sessionId: existing.sessionId || "",
-        phoneVerified: Boolean(existing.phoneVerified),
-      }
-    : {
-        ...actorFields,
-        userId: state.profile.userId,
-        sessionId: session.id,
-        phoneVerified: state.profile.phoneVerified,
-      };
+  const searchers = getSearchers(existing).map((entry) => ({ ...entry }));
+  const myIndex = findSearcherIndex(existing);
+  const me = {
+    userId: state.profile.userId,
+    sessionId: session.id,
+    name: actorFields.name,
+    contact: actorFields.contact,
+    team: actorFields.team,
+    phoneVerified: state.profile.phoneVerified,
+  };
+
+  let nextStatus = status;
+  let toastMessage = `Grid ${id}: ${STATUS[status].label}.`;
+
+  if (status === "searching") {
+    // Joining a grid never blocks; multiple volunteers may search together.
+    if (myIndex === -1) {
+      searchers.push({ ...me, joinedAt: now, lastHeartbeatAt: now });
+    } else {
+      searchers[myIndex] = { ...searchers[myIndex], ...me, lastHeartbeatAt: now };
+    }
+    nextStatus = "searching";
+    toastMessage = `Grid ${id}: you are searching here (${searchers.length} on this grid).`;
+  } else if (status === "done" || status === "stopped") {
+    // Completing or stopping removes only this volunteer; the grid closes
+    // only once the last searcher leaves.
+    if (myIndex !== -1) {
+      searchers.splice(myIndex, 1);
+    }
+    if (searchers.length > 0) {
+      nextStatus = "searching";
+      toastMessage = `Grid ${id}: you left. ${searchers.length} still searching here.`;
+    } else {
+      nextStatus = status;
+    }
+  } else {
+    // Escalations (backup / emergency / found) apply to the whole grid.
+    nextStatus = status;
+  }
 
   state.cells[id] = {
     ...existing,
     id,
-    status,
-    name: owner.name,
-    contact: owner.contact,
-    team: owner.team,
-    userId: owner.userId,
-    sessionId: owner.sessionId,
-    phoneVerified: owner.phoneVerified,
+    status: nextStatus,
+    searchers,
+    name: actorFields.name,
+    contact: actorFields.contact,
+    team: actorFields.team,
+    userId: state.profile.userId,
+    sessionId: session.id,
+    phoneVerified: state.profile.phoneVerified,
     notes,
     updatedAt: now,
     createdAt: existing.createdAt || now,
     assignedAt:
-      status === "searching" && (!existing.assignedAt || !isOwnedByCurrentUser(existing))
-        ? now
-        : existing.assignedAt || "",
-    lastHeartbeatAt: status === "searching" ? now : existing.lastHeartbeatAt || "",
+      nextStatus === "searching" ? existing.assignedAt || now : existing.assignedAt || "",
+    lastHeartbeatAt:
+      nextStatus === "searching"
+        ? latestHeartbeatOf(searchers) || now
+        : existing.lastHeartbeatAt || "",
     lastActionBy: currentActor(),
-    reportedBy: preserveOwner ? currentActor() : existing.reportedBy || null,
     lastReleaseReason: "",
   };
 
-  if (status === "searching" && previousStatus === "stale") {
+  if (nextStatus === "searching" && previousStatus === "stale") {
     state.cells[id].reclaimedAt = now;
   }
 
-  if (ESCALATION_STATUSES.has(status)) {
-    createIncident(id, status, notes);
+  if (ESCALATION_STATUSES.has(nextStatus)) {
+    createIncident(id, nextStatus, notes);
   }
 
-  if (CLOSED_STATUSES.has(status)) {
-    resolveIncidentsForGrid(id, `Closed by ${status}`);
+  if (CLOSED_STATUSES.has(nextStatus)) {
+    resolveIncidentsForGrid(id, `Closed by ${nextStatus}`);
   }
 
   addAudit(actionTypeForStatus(status), id, {
-    status,
+    status: nextStatus,
+    requestedStatus: status,
     previousStatus,
     notes,
-    heldByAnother,
+    searcherCount: searchers.length,
     phoneVerified: state.profile.phoneVerified,
   });
   saveState();
   refreshGrid();
   renderPanel();
-  showToast(`Grid ${id}: ${STATUS[status].label}.`);
-}
-
-function shouldBlockCellUpdate(existing, status) {
-  if (!existing.id || !existing.status || existing.status === "open" || existing.status === "stale") {
-    return false;
-  }
-  if (state.profile.dispatcher || isOwnedByCurrentUser(existing)) {
-    return false;
-  }
-  if (ESCALATION_STATUSES.has(status)) {
-    return false;
-  }
-  return true;
+  showToast(toastMessage);
 }
 
 function sendHeartbeat(id) {
@@ -1039,22 +1070,21 @@ function sendHeartbeat(id) {
     showToast("Heartbeat only applies to an active search grid.");
     return;
   }
-  if (isHeldByAnother(cell) && !state.profile.dispatcher) {
-    addAudit("heartbeat_blocked", id, {
-      currentOwner: ownerSnapshot(cell),
-    });
-    saveState();
-    showToast("Only the assigned volunteer or dispatcher can heartbeat this grid.");
+  const myIndex = findSearcherIndex(cell);
+  if (myIndex === -1) {
+    showToast('Tap "Keep searching" to join this grid first.');
     return;
   }
 
   const now = new Date().toISOString();
-  const previousHeartbeatAt = cell.lastHeartbeatAt || "";
-  cell.lastHeartbeatAt = now;
+  const searchers = getSearchers(cell).map((entry) => ({ ...entry }));
+  searchers[myIndex] = { ...searchers[myIndex], lastHeartbeatAt: now };
+  cell.searchers = searchers;
+  cell.lastHeartbeatAt = latestHeartbeatOf(searchers) || now;
   cell.updatedAt = now;
   cell.lastActionBy = currentActor();
   addAudit("heartbeat", id, {
-    previousHeartbeatAt,
+    searcherCount: searchers.length,
   });
   saveState();
   renderPanel();
@@ -1067,20 +1097,50 @@ function releaseCell(id, reason) {
     showToast(`Grid ${id} is already open.`);
     return;
   }
-  if (!state.profile.dispatcher && !isOwnedByCurrentUser(cell)) {
+  const myIndex = findSearcherIndex(cell);
+  if (!state.profile.dispatcher && myIndex === -1) {
     addAudit("release_blocked", id, {
-      currentOwner: ownerSnapshot(cell),
+      releasedSearchers: ownerSnapshot(cell),
       reason,
     });
     saveState();
-    showToast("Only the assigned volunteer or dispatcher can release this grid.");
+    showToast("Only a volunteer searching this grid or dispatcher can release it.");
     return;
   }
 
   const now = new Date().toISOString();
   const previousStatus = cell.status || "open";
+
+  // A volunteer releasing only leaves the grid; anyone else keeps searching.
+  if (!state.profile.dispatcher && myIndex !== -1) {
+    const searchers = getSearchers(cell)
+      .map((entry) => ({ ...entry }))
+      .filter((_, index) => index !== myIndex);
+    if (searchers.length > 0) {
+      state.cells[id] = {
+        ...cell,
+        searchers,
+        status: "searching",
+        updatedAt: now,
+        lastHeartbeatAt: latestHeartbeatOf(searchers),
+        lastActionBy: currentActor(),
+      };
+      addAudit("volunteer_left_grid", id, {
+        previousStatus,
+        searcherCount: searchers.length,
+      });
+      saveState();
+      refreshGrid();
+      renderPanel();
+      showToast(`Grid ${id}: you left. ${searchers.length} still searching here.`);
+      return;
+    }
+  }
+
+  // Dispatcher release, or the last searcher leaving: the grid goes stale.
   state.cells[id] = {
     ...cell,
+    searchers: [],
     status: "stale",
     updatedAt: now,
     staleReleasedAt: now,
@@ -1089,7 +1149,7 @@ function releaseCell(id, reason) {
   };
   addAudit(reason, id, {
     previousStatus,
-    releasedOwner: ownerSnapshot(cell),
+    releasedSearchers: ownerSnapshot(cell),
   });
   saveState();
   refreshGrid();
@@ -1100,42 +1160,74 @@ function releaseCell(id, reason) {
 function scanStaleCells(options = {}) {
   const now = new Date();
   let released = 0;
+  let removedSearchers = 0;
 
   Object.entries(state.cells).forEach(([id, cell]) => {
-    if (cell.status !== "searching" || !isStaleByTime(cell, now)) {
+    if (cell.status !== "searching") {
+      return;
+    }
+    const searchers = getSearchers(cell);
+    const fresh = searchers.filter((entry) => {
+      const last = entry.lastHeartbeatAt || entry.joinedAt;
+      return last && minutesSince(last, now) < STALE_AFTER_MINUTES;
+    });
+    if (fresh.length === searchers.length) {
       return;
     }
 
+    removedSearchers += searchers.length - fresh.length;
     const previousStatus = cell.status;
-    state.cells[id] = {
-      ...cell,
-      status: "stale",
-      updatedAt: now.toISOString(),
-      staleReleasedAt: now.toISOString(),
-      lastReleaseReason: `No heartbeat for ${STALE_AFTER_MINUTES} minutes`,
-      lastActionBy: systemActor(),
-    };
-    addAudit(
-      "auto_release_stale",
-      id,
-      {
-        previousStatus,
-        minutesInactive: minutesSince(cell.lastHeartbeatAt || cell.updatedAt, now),
-        releasedOwner: ownerSnapshot(cell),
-      },
-      systemActor(),
-    );
-    released += 1;
+
+    if (fresh.length > 0) {
+      // Some volunteers are still active: drop only the stale ones.
+      state.cells[id] = {
+        ...cell,
+        searchers: fresh,
+        updatedAt: now.toISOString(),
+        lastHeartbeatAt: latestHeartbeatOf(fresh),
+        lastActionBy: systemActor(),
+      };
+      addAudit(
+        "stale_searcher_removed",
+        id,
+        {
+          removed: searchers.length - fresh.length,
+          searcherCount: fresh.length,
+        },
+        systemActor(),
+      );
+    } else {
+      // The last active volunteer went stale: release the whole grid.
+      state.cells[id] = {
+        ...cell,
+        searchers: [],
+        status: "stale",
+        updatedAt: now.toISOString(),
+        staleReleasedAt: now.toISOString(),
+        lastReleaseReason: `No heartbeat for ${STALE_AFTER_MINUTES} minutes`,
+        lastActionBy: systemActor(),
+      };
+      addAudit(
+        "auto_release_stale",
+        id,
+        {
+          previousStatus,
+          releasedSearchers: ownerSnapshot(cell),
+        },
+        systemActor(),
+      );
+      released += 1;
+    }
   });
 
-  if (released) {
+  if (released || removedSearchers) {
     saveState();
     refreshGrid();
     renderPanel();
   }
 
   if (options.manual) {
-    addAudit("stale_release_scan", null, { released });
+    addAudit("stale_release_scan", null, { released, removedSearchers });
     saveState();
     renderPanel();
     showToast(released ? `${released} stale grid released.` : "No stale grids found.");
@@ -1149,6 +1241,9 @@ function scanStaleCells(options = {}) {
 function refreshGrid() {
   if (gridLayer) {
     gridLayer.setStyle(getCellStyle);
+  }
+  if (map && labelLayer) {
+    renderLabels();
   }
 }
 
@@ -1177,14 +1272,15 @@ function getCounts() {
 
 function getAnalytics(counts = getCounts()) {
   const covered = counts.done + counts.stopped + counts.found;
-  const duplicateBlocks = state.audit.filter(
-    (event) => event.actionType === "duplicate_or_unauthorized_update_blocked",
-  ).length;
+  const volunteersSearching = Object.values(state.cells).reduce(
+    (total, cell) => total + searcherCount(cell),
+    0,
+  );
 
   return {
     coverage: Math.round((covered / cellFeatures.length) * 100),
     openIncidents: getOpenIncidents().length,
-    duplicateBlocks,
+    volunteersSearching,
   };
 }
 
@@ -1304,11 +1400,30 @@ function renderAuditLog(audit) {
   `;
 }
 
-function renderDuplicateNotice(entry) {
+function renderSearcherList(searchers) {
+  if (!searchers.length) {
+    return '<p class="notice">No volunteers on this grid yet. Tap "Keep searching" below to start.</p>';
+  }
+  const noun = searchers.length === 1 ? "person" : "people";
   return `
-    <p class="notice warning">
-      Claimed by ${escapeHtml(entry.name || "another volunteer")}. Status changes are limited unless dispatcher mode releases the grid.
-    </p>
+    <div class="searcher-block">
+      <p class="searcher-count">${searchers.length} ${noun} searching here</p>
+      <ul class="searcher-list">
+        ${searchers
+          .map((entry) => {
+            const isMe =
+              (entry.userId && entry.userId === state.profile.userId) ||
+              (entry.sessionId && entry.sessionId === session.id);
+            return `<li>
+              <strong>${escapeHtml(entry.name || "Volunteer")}</strong>${
+                isMe ? ' <span class="you-pill">you</span>' : ""
+              }
+              ${entry.team ? `<span class="small">${escapeHtml(entry.team)}</span>` : ""}
+            </li>`;
+          })
+          .join("")}
+      </ul>
+    </div>
   `;
 }
 
@@ -1443,13 +1558,16 @@ function systemActor() {
 }
 
 function ownerSnapshot(cell) {
+  const searchers = getSearchers(cell);
   return {
-    userId: cell.userId || "",
-    sessionId: cell.sessionId || "",
-    name: cell.name || "",
-    phone: maskPhone(cell.contact || ""),
-    team: cell.team || "",
-    phoneVerified: Boolean(cell.phoneVerified),
+    searcherCount: searchers.length,
+    searchers: searchers.map((entry) => ({
+      userId: entry.userId || "",
+      name: entry.name || "",
+      phone: maskPhone(entry.contact || ""),
+      team: entry.team || "",
+      phoneVerified: Boolean(entry.phoneVerified),
+    })),
   };
 }
 
@@ -1470,30 +1588,36 @@ function humanAction(actionType) {
   return actionType.replaceAll("_", " ");
 }
 
+function getSearchers(cell) {
+  return Array.isArray(cell?.searchers) ? cell.searchers : [];
+}
+
+function searcherCount(cell) {
+  return getSearchers(cell).length;
+}
+
+function findSearcherIndex(cell) {
+  return getSearchers(cell).findIndex(
+    (entry) =>
+      (entry.userId && entry.userId === state.profile.userId) ||
+      (entry.sessionId && entry.sessionId === session.id),
+  );
+}
+
+function isCurrentUserSearching(cell) {
+  return findSearcherIndex(cell) !== -1;
+}
+
 function isOwnedByCurrentUser(cell) {
-  return Boolean(
-    cell &&
-      ((cell.userId && cell.userId === state.profile.userId) ||
-        (cell.sessionId && cell.sessionId === session.id)),
-  );
+  return isCurrentUserSearching(cell);
 }
 
-function isHeldByAnother(cell) {
-  return Boolean(
-    cell &&
-      cell.status === "searching" &&
-      cell.userId &&
-      cell.userId !== state.profile.userId &&
-      cell.sessionId !== session.id,
-  );
-}
-
-function isStaleByTime(cell, now = new Date()) {
-  const last = cell.lastHeartbeatAt || cell.updatedAt || cell.assignedAt;
-  if (!last) {
-    return false;
-  }
-  return minutesSince(last, now) >= STALE_AFTER_MINUTES;
+function latestHeartbeatOf(searchers) {
+  return searchers
+    .map((entry) => entry.lastHeartbeatAt || entry.joinedAt)
+    .filter(Boolean)
+    .sort()
+    .at(-1) || "";
 }
 
 function getStaleEta(cell) {
@@ -1693,7 +1817,7 @@ async function importState(event) {
     if (!imported.cells || typeof imported.cells !== "object") {
       throw new Error("Missing cells");
     }
-    state.cells = imported.cells;
+    state.cells = normalizeCells(imported.cells);
     state.audit = Array.isArray(imported.audit) ? imported.audit : state.audit;
     state.incidents = Array.isArray(imported.incidents)
       ? imported.incidents

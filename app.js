@@ -6,6 +6,9 @@ const DISPATCHER_PIN = "2468";
 const STALE_AFTER_MINUTES = 30;
 const HEARTBEAT_WARNING_MINUTES = 20;
 const HEARTBEAT_SCAN_MS = 60 * 1000;
+const GRID_CELL_KM = 0.5;
+// Smaller squares need more zoom before their ID labels stop overlapping.
+const LABEL_MIN_ZOOM = 12 + Math.round(Math.log2(1 / GRID_CELL_KM));
 const SHARED_API_BASE = location.hostname.endsWith("github.io")
   ? "https://esti-search-grid.vercel.app"
   : "";
@@ -383,7 +386,7 @@ async function pushSharedState() {
 
 function buildGrid() {
   const boundaryPolygon = turf.polygon([SEARCH_AREA.boundary]);
-  const grid = turf.squareGrid(turf.bbox(boundaryPolygon), 1, {
+  const grid = turf.squareGrid(turf.bbox(boundaryPolygon), GRID_CELL_KM, {
     units: "kilometers",
     mask: boundaryPolygon,
   });
@@ -400,7 +403,9 @@ function buildGrid() {
   enriched
     .sort((a, b) => b.lat - a.lat || a.lng - b.lng)
     .forEach((item) => {
-      const row = rows.find((candidate) => Math.abs(candidate.lat - item.lat) < 0.0048);
+      const row = rows.find(
+        (candidate) => Math.abs(candidate.lat - item.lat) < GRID_CELL_KM * 0.0048,
+      );
       if (row) {
         row.items.push(item);
         row.lat =
@@ -511,7 +516,7 @@ function getCellStyle(feature) {
 
 function renderLabels() {
   labelLayer.clearLayers();
-  if (map.getZoom() < 12) {
+  if (map.getZoom() < LABEL_MIN_ZOOM) {
     return;
   }
 
@@ -615,7 +620,7 @@ function renderCommandPanel() {
   const activity = getRecentActivity();
   return `
     <h2>Command Board</h2>
-    <p class="muted tight">${cellFeatures.length} one-kilometer grid squares. Grid updates sync across phones; each volunteer identity stays on their own device.</p>
+    <p class="muted tight">${cellFeatures.length} grid squares, ${GRID_CELL_KM} km each. Grid updates sync across phones; each volunteer identity stays on their own device.</p>
     <p class="sync-line ${sharedSyncStatus === "live" ? "live" : "offline"}">Shared sync: ${escapeHtml(sharedSyncStatus)}</p>
     <div class="summary-grid">
       ${summaryItem(counts.open, "Open")}

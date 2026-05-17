@@ -22,7 +22,7 @@ plain `file://` URL.
 
 ## Current behavior
 
-- Generates 1 kilometer grid squares over the target area.
+- Generates 0.5 kilometer grid squares over the target area.
 - Shows OpenStreetMap streets under the grid.
 - Creates a temporary browser session identity and persistent volunteer ID.
 - Lets a volunteer tap a grid and mark it as searching, complete, stopped,

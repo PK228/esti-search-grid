@@ -920,6 +920,11 @@ function bindCommandPanel() {
     lastSeenForm.addEventListener("submit", saveLastSeenDetails);
   }
 
+  const lastSeenAddressForm = document.getElementById("lastSeenAddressForm");
+  if (lastSeenAddressForm) {
+    lastSeenAddressForm.addEventListener("submit", geocodeLastSeen);
+  }
+
   document.querySelectorAll("[data-jump-grid]").forEach((button) => {
     button.addEventListener("click", () => selectCell(button.dataset.jumpGrid));
   });
@@ -2017,7 +2022,7 @@ function togglePlaceLastSeen() {
   );
 }
 
-function placeLastSeen(latlng) {
+function placeLastSeen(latlng, address) {
   if (!state.profile.dispatcher || !latlng) {
     return;
   }
@@ -2028,6 +2033,7 @@ function placeLastSeen(latlng) {
     lng: latlng.lng,
     time: existing.time || toLocalDatetimeValue(now),
     note: existing.note || "",
+    address: address || existing.address || "",
     setBy: state.profile.name || "Dispatcher",
     updatedAt: now.toISOString(),
   };
@@ -2037,6 +2043,57 @@ function placeLastSeen(latlng) {
   refreshGrid();
   renderPanel();
   showToast("Last-seen pin placed. Set the time, then save.");
+}
+
+async function geocodeLastSeen(event) {
+  event?.preventDefault();
+  if (!state.profile.dispatcher) {
+    return;
+  }
+  const input = document.getElementById("lastSeenAddress");
+  const query = input.value.trim();
+  if (!query) {
+    showToast("Type an address to look up.");
+    return;
+  }
+  showToast("Looking up the address…");
+  try {
+    const lons = SEARCH_AREA.boundary.map((point) => point[0]);
+    const lats = SEARCH_AREA.boundary.map((point) => point[1]);
+    const viewbox = `${Math.min(...lons)},${Math.min(...lats)},${Math.max(
+      ...lons,
+    )},${Math.max(...lats)}`;
+    const params = new URLSearchParams({
+      q: query,
+      format: "jsonv2",
+      limit: "1",
+      countrycodes: "ca",
+      viewbox,
+      bounded: "0",
+    });
+    const response = await fetch(
+      `https://nominatim.openstreetmap.org/search?${params.toString()}`,
+      { headers: { Accept: "application/json" } },
+    );
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+    const results = await response.json();
+    if (!Array.isArray(results) || !results.length) {
+      showToast("No match for that address — try adding the city, or drop a pin.");
+      return;
+    }
+    const lat = Number(results[0].lat);
+    const lng = Number(results[0].lon);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+      showToast("That address didn't return a usable location.");
+      return;
+    }
+    placeLastSeen({ lat, lng }, results[0].display_name || query);
+    map.setView([lat, lng], Math.max(map.getZoom(), 15));
+  } catch {
+    showToast("Address lookup failed. Check the connection or drop a pin instead.");
+  }
 }
 
 function saveLastSeenDetails(event) {
@@ -2078,6 +2135,13 @@ function renderLastSeenControl() {
           }. Everyone searching can see it.</p>`
         : '<p class="muted tight">No pin yet. Mark where Esti was last seen so the whole team can focus there.</p>'
     }
+    ${spot && spot.address ? `<p class="small">${escapeHtml(spot.address)}</p>` : ""}
+    <form id="lastSeenAddressForm" class="verification-row">
+      <label>Find by address
+        <input id="lastSeenAddress" autocomplete="off" placeholder="123 Finch Ave W" />
+      </label>
+      <button id="findAddressBtn" class="button active" type="submit">Find</button>
+    </form>
     <div class="button-row">
       <button id="placeLastSeenBtn" class="button primary" type="button">${
         placingLastSeen ? "Tap the map…" : spot ? "Move pin" : "Place pin on map"

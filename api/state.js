@@ -79,6 +79,7 @@ function sanitizeLastSeen(input) {
     lng,
     time: typeof input.time === "string" ? input.time.slice(0, 40) : "",
     note: typeof input.note === "string" ? input.note.slice(0, 300) : "",
+    address: typeof input.address === "string" ? input.address.slice(0, 200) : "",
     setBy: typeof input.setBy === "string" ? input.setBy.slice(0, 80) : "",
     updatedAt:
       typeof input.updatedAt === "string"

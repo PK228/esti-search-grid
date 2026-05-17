@@ -29,6 +29,8 @@ plain `file://` URL.
   session ID.
 - Creates an audit event for each meaningful action: timestamp, user, grid,
   action type, and details.
+- Syncs grid cells, audit events, and incidents through a shared Vercel API
+  backed by Upstash Redis.
 - Supports manual heartbeat updates on active search grids.
 - Auto-releases grids after 30 minutes without heartbeat and preserves the
   release in the audit trail.
@@ -47,9 +49,20 @@ Phone verification is implemented as a local demo code flow so the UI and audit
 model are ready. Real verification requires a backend/SMS provider such as
 Supabase Auth, Twilio, Firebase Auth, or another OTP service.
 
+## Shared backend
+
+The shared state endpoint is:
+
+```text
+/api/state
+```
+
+On Vercel it uses the Upstash Redis environment variables provisioned by the
+Vercel Marketplace integration. On GitHub Pages, the frontend calls the Vercel
+API at `https://esti-search-grid.vercel.app/api/state`.
+
 ## Important next step
 
-This prototype is local-only. For multiple volunteers to see the same live grid,
-connect the cell status updates to a shared backend such as Supabase, Firebase,
-or a small WebSocket/API service. The backend should own authentication,
-dispatcher roles, SMS verification, audit storage, and real-time subscriptions.
+The backend now shares grid status across phones. Phone verification and
+dispatcher mode are still local/demo controls; for a production response system,
+move those to real authentication and server-side roles.

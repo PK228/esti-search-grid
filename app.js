@@ -6,6 +6,11 @@ const DISPATCHER_PIN = "2468";
 const STALE_AFTER_MINUTES = 30;
 const HEARTBEAT_WARNING_MINUTES = 20;
 const HEARTBEAT_SCAN_MS = 60 * 1000;
+const SHARED_API_BASE = location.hostname.endsWith("github.io")
+  ? "https://esti-search-grid.vercel.app"
+  : "";
+const SHARED_STATE_API = `${SHARED_API_BASE}/api/state`;
+const SHARED_POLL_MS = 3500;
 
 const SEARCH_AREA = {
   name: "Keele / Yonge / Steeles / Eglinton",
@@ -100,6 +105,13 @@ let staleTimer = null;
 let cellFeatures = [];
 let cellLookup = new Map();
 let toastTimer = null;
+let sharedSyncStatus = "connecting";
+let sharedSyncTimer = null;
+let sharedWriteTimer = null;
+let sharedWriteInFlight = false;
+let sharedWriteQueued = false;
+let sharedWritesPaused = true;
+let lastSharedUpdatedAt = "";
 
 document.addEventListener("DOMContentLoaded", init);
 
@@ -117,6 +129,7 @@ function init() {
   renderPanel();
   updateGpsStatus("GPS idle");
   refreshModeButtons();
+  startSharedSync();
   staleTimer = window.setInterval(() => scanStaleCells(), HEARTBEAT_SCAN_MS);
 }
 
@@ -218,6 +231,121 @@ function saveState() {
       savedAt: new Date().toISOString(),
     }),
   );
+  scheduleSharedWrite();
+}
+
+function sharedPayload() {
+  return {
+    cells: state.cells,
+    audit: state.audit,
+    incidents: state.incidents,
+  };
+}
+
+function setSharedSyncStatus(status, shouldRender = true) {
+  sharedSyncStatus = status;
+  if (shouldRender && !activeCellId) {
+    renderPanel();
+  }
+}
+
+function startSharedSync() {
+  fetchSharedState({ initial: true });
+  sharedSyncTimer = window.setInterval(() => {
+    fetchSharedState();
+  }, SHARED_POLL_MS);
+}
+
+async function fetchSharedState(options = {}) {
+  try {
+    const response = await fetch(`${SHARED_STATE_API}?t=${Date.now()}`, {
+      cache: "no-store",
+    });
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+    const payload = await response.json();
+    const remote = payload.state || {};
+    if (remote.updatedAt && remote.updatedAt !== lastSharedUpdatedAt) {
+      applySharedState(remote);
+      lastSharedUpdatedAt = remote.updatedAt;
+    }
+    sharedWritesPaused = false;
+    setSharedSyncStatus("live");
+  } catch (error) {
+    sharedWritesPaused = false;
+    setSharedSyncStatus("offline");
+    if (options.initial) {
+      showToast("Shared sync is offline; using this device only.");
+    }
+  }
+}
+
+function applySharedState(remote) {
+  if (sharedWriteInFlight || sharedWriteQueued) {
+    return;
+  }
+
+  state.cells = remote.cells && typeof remote.cells === "object" ? remote.cells : {};
+  state.audit = Array.isArray(remote.audit) ? remote.audit : [];
+  state.incidents = Array.isArray(remote.incidents) ? remote.incidents : [];
+  saveLocalOnly();
+  refreshGrid();
+  renderPanel();
+}
+
+function saveLocalOnly() {
+  localStorage.setItem(
+    STORAGE_KEY,
+    JSON.stringify({
+      version: 2,
+      cells: state.cells,
+      profile: state.profile,
+      audit: state.audit,
+      incidents: state.incidents,
+      savedAt: new Date().toISOString(),
+    }),
+  );
+}
+
+function scheduleSharedWrite() {
+  if (sharedWritesPaused) {
+    return;
+  }
+  sharedWriteQueued = true;
+  window.clearTimeout(sharedWriteTimer);
+  sharedWriteTimer = window.setTimeout(pushSharedState, 250);
+}
+
+async function pushSharedState() {
+  if (sharedWritesPaused || sharedWriteInFlight) {
+    return;
+  }
+
+  sharedWriteQueued = false;
+  sharedWriteInFlight = true;
+  try {
+    const response = await fetch(SHARED_STATE_API, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(sharedPayload()),
+    });
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+    const payload = await response.json();
+    if (payload.state?.updatedAt) {
+      lastSharedUpdatedAt = payload.state.updatedAt;
+    }
+    setSharedSyncStatus("live");
+  } catch {
+    setSharedSyncStatus("offline");
+    showToast("Shared sync failed; changes are saved on this phone.");
+  } finally {
+    sharedWriteInFlight = false;
+  }
 }
 
 function buildGrid() {
@@ -448,7 +576,8 @@ function renderCommandPanel() {
   const activity = getRecentActivity();
   return `
     <h2>Command Board</h2>
-    <p class="muted tight">${cellFeatures.length} one-kilometer grid squares. Local prototype state is stored in this browser until exported or shared.</p>
+    <p class="muted tight">${cellFeatures.length} one-kilometer grid squares. Grid updates sync across phones; each volunteer identity stays on their own device.</p>
+    <p class="sync-line ${sharedSyncStatus === "live" ? "live" : "offline"}">Shared sync: ${escapeHtml(sharedSyncStatus)}</p>
     <div class="summary-grid">
       ${summaryItem(counts.open, "Open")}
       ${summaryItem(counts.searching, "Searching")}

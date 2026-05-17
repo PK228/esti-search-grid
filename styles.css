@@ -233,6 +233,29 @@ h3 {
   margin-bottom: 8px;
 }
 
+.sync-line {
+  display: inline-flex;
+  align-items: center;
+  min-height: 26px;
+  border-radius: 999px;
+  padding: 0 9px;
+  color: #6b3a00;
+  background: #fff7ed;
+  font-size: 12px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.sync-line.live {
+  color: #166534;
+  background: #dcfce7;
+}
+
+.sync-line.offline {
+  color: #991b1b;
+  background: #fee2e2;
+}
+
 .summary-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

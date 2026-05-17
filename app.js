@@ -101,6 +101,8 @@ let gridLayer;
 let boundaryLayer;
 let labelLayer;
 let volunteerLayer;
+let lastSeenLayer;
+let placingLastSeen = false;
 let lastGpsFix = null;
 let positionSyncTimer = null;
 let positionsKey = localStorage.getItem(POSITIONS_KEY_STORE) || "";
@@ -182,6 +184,7 @@ function loadState() {
     profile: defaultProfile(),
     audit: [],
     incidents: [],
+    lastSeen: null,
   };
 
   try {
@@ -196,6 +199,7 @@ function loadState() {
       profile: { ...defaultProfile(), ...(saved.profile || {}) },
       audit: Array.isArray(saved.audit) ? saved.audit : [],
       incidents: Array.isArray(saved.incidents) ? saved.incidents : [],
+      lastSeen: saved.lastSeen || null,
     };
   } catch {
     return fallback;
@@ -271,6 +275,7 @@ function saveState() {
       profile: state.profile,
       audit: state.audit,
       incidents: state.incidents,
+      lastSeen: state.lastSeen,
       savedAt: new Date().toISOString(),
     }),
   );
@@ -282,6 +287,7 @@ function sharedPayload() {
     cells: state.cells,
     audit: state.audit,
     incidents: state.incidents,
+    lastSeen: state.lastSeen || null,
   };
 }
 
@@ -334,6 +340,7 @@ function applySharedState(remote) {
   );
   state.audit = Array.isArray(remote.audit) ? remote.audit : [];
   state.incidents = Array.isArray(remote.incidents) ? remote.incidents : [];
+  state.lastSeen = remote.lastSeen || null;
   saveLocalOnly();
   refreshGrid();
   if (!dispatcherLoginOpen) {
@@ -350,6 +357,7 @@ function saveLocalOnly() {
       profile: state.profile,
       audit: state.audit,
       incidents: state.incidents,
+      lastSeen: state.lastSeen,
       savedAt: new Date().toISOString(),
     }),
   );
@@ -483,7 +491,13 @@ function setupMap() {
     {
       style: getCellStyle,
       onEachFeature(feature, layer) {
-        layer.on("click", () => selectCell(feature.properties.id));
+        layer.on("click", (event) => {
+          if (placingLastSeen) {
+            placeLastSeen(event.latlng);
+            return;
+          }
+          selectCell(feature.properties.id);
+        });
         layer.on("mouseover", () => layer.setStyle({ weight: 3 }));
         layer.on("mouseout", () => gridLayer.resetStyle(layer));
       },
@@ -492,7 +506,9 @@ function setupMap() {
 
   labelLayer = L.layerGroup().addTo(map);
   volunteerLayer = L.layerGroup().addTo(map);
+  lastSeenLayer = L.layerGroup().addTo(map);
   renderLabels();
+  renderLastSeen();
   map.on("zoomend", renderLabels);
   map.fitBounds(areaBounds.pad(0.08));
 }
@@ -771,6 +787,7 @@ function renderDispatcherDashboard() {
       <h3>Dispatcher</h3>
       <p class="notice success"><strong>Dispatcher mode active.</strong> The PIN field closes after login. Use the top button to exit dispatch mode.</p>
       ${renderLocationKeyControl()}
+      ${renderLastSeenControl()}
       <div class="button-row">
         <button id="runStaleBtn" class="button warning" type="button">Run stale release</button>
         <button id="exportAuditBtn" class="button" type="button">Export audit</button>
@@ -886,6 +903,21 @@ function bindCommandPanel() {
   const positionsKeyBtn = document.getElementById("positionsKeyBtn");
   if (positionsKeyBtn) {
     positionsKeyBtn.addEventListener("click", savePositionsKey);
+  }
+
+  const placeLastSeenBtn = document.getElementById("placeLastSeenBtn");
+  if (placeLastSeenBtn) {
+    placeLastSeenBtn.addEventListener("click", togglePlaceLastSeen);
+  }
+
+  const removeLastSeenBtn = document.getElementById("removeLastSeenBtn");
+  if (removeLastSeenBtn) {
+    removeLastSeenBtn.addEventListener("click", removeLastSeen);
+  }
+
+  const lastSeenForm = document.getElementById("lastSeenForm");
+  if (lastSeenForm) {
+    lastSeenForm.addEventListener("submit", saveLastSeenDetails);
   }
 
   document.querySelectorAll("[data-jump-grid]").forEach((button) => {
@@ -1321,6 +1353,7 @@ function refreshGrid() {
   if (map && labelLayer) {
     renderLabels();
   }
+  renderLastSeen();
 }
 
 function getCounts() {
@@ -1945,6 +1978,150 @@ function renderVolunteerMarkers(positions) {
   });
 }
 
+function renderLastSeen() {
+  if (!lastSeenLayer || !map) {
+    return;
+  }
+  lastSeenLayer.clearLayers();
+  const spot = state.lastSeen;
+  if (!spot || !Number.isFinite(spot.lat) || !Number.isFinite(spot.lng)) {
+    return;
+  }
+  const timeText = spot.time ? formatLastSeenTime(spot.time) : "time not set";
+  const marker = L.marker([spot.lat, spot.lng], {
+    interactive: false,
+    icon: L.divIcon({
+      className: "lastseen-marker",
+      html: `<span class="lastseen-pin"></span><span class="lastseen-label">Esti — last seen<br />${escapeHtml(
+        timeText,
+      )}</span>`,
+      iconSize: [22, 22],
+      iconAnchor: [11, 11],
+    }),
+    zIndexOffset: 1200,
+  });
+  lastSeenLayer.addLayer(marker);
+}
+
+function togglePlaceLastSeen() {
+  if (!state.profile.dispatcher) {
+    return;
+  }
+  placingLastSeen = !placingLastSeen;
+  refreshModeButtons();
+  renderPanel();
+  showToast(
+    placingLastSeen
+      ? "Tap the map where Esti was last seen."
+      : "Pin placement cancelled.",
+  );
+}
+
+function placeLastSeen(latlng) {
+  if (!state.profile.dispatcher || !latlng) {
+    return;
+  }
+  const now = new Date();
+  const existing = state.lastSeen || {};
+  state.lastSeen = {
+    lat: latlng.lat,
+    lng: latlng.lng,
+    time: existing.time || toLocalDatetimeValue(now),
+    note: existing.note || "",
+    setBy: state.profile.name || "Dispatcher",
+    updatedAt: now.toISOString(),
+  };
+  placingLastSeen = false;
+  addAudit("last_seen_set", null, { lat: latlng.lat, lng: latlng.lng });
+  saveState();
+  refreshGrid();
+  renderPanel();
+  showToast("Last-seen pin placed. Set the time, then save.");
+}
+
+function saveLastSeenDetails(event) {
+  event?.preventDefault();
+  if (!state.lastSeen) {
+    return;
+  }
+  state.lastSeen.time = document.getElementById("lastSeenTime").value;
+  state.lastSeen.note = document.getElementById("lastSeenNote").value.trim();
+  state.lastSeen.setBy = state.profile.name || state.lastSeen.setBy || "Dispatcher";
+  state.lastSeen.updatedAt = new Date().toISOString();
+  addAudit("last_seen_updated", null, { time: state.lastSeen.time });
+  saveState();
+  refreshGrid();
+  renderPanel();
+  showToast("Last-seen details saved.");
+}
+
+function removeLastSeen() {
+  state.lastSeen = null;
+  placingLastSeen = false;
+  addAudit("last_seen_cleared", null, {});
+  saveState();
+  refreshGrid();
+  renderPanel();
+  showToast("Last-seen pin removed.");
+}
+
+function renderLastSeenControl() {
+  const spot = state.lastSeen;
+  return `
+    <h3>Last-seen location</h3>
+    ${
+      spot
+        ? `<p class="notice success">Pin is on the map${
+            spot.time
+              ? ` — last seen ${escapeHtml(formatLastSeenTime(spot.time))}`
+              : ""
+          }. Everyone searching can see it.</p>`
+        : '<p class="muted tight">No pin yet. Mark where Esti was last seen so the whole team can focus there.</p>'
+    }
+    <div class="button-row">
+      <button id="placeLastSeenBtn" class="button primary" type="button">${
+        placingLastSeen ? "Tap the map…" : spot ? "Move pin" : "Place pin on map"
+      }</button>
+      ${
+        spot
+          ? '<button id="removeLastSeenBtn" class="button warning" type="button">Remove pin</button>'
+          : ""
+      }
+    </div>
+    ${
+      spot
+        ? `
+    <form id="lastSeenForm" class="login-form">
+      <label>Time last seen
+        <input id="lastSeenTime" type="datetime-local" value="${escapeAttr(
+          spot.time || "",
+        )}" />
+      </label>
+      <label>Note
+        <textarea id="lastSeenNote">${escapeHtml(spot.note || "")}</textarea>
+      </label>
+      <button class="button success full" type="submit">Save details</button>
+    </form>`
+        : ""
+    }
+  `;
+}
+
+function formatLastSeenTime(value) {
+  if (!value) {
+    return "";
+  }
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? value : formatTime(date.toISOString());
+}
+
+function toLocalDatetimeValue(date) {
+  const pad = (value) => String(value).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(
+    date.getDate(),
+  )}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
 function findContainingCell(lng, lat) {
   const point = turf.point([lng, lat]);
   for (const feature of cellFeatures) {
@@ -1970,6 +2147,7 @@ function exportState() {
     cells: state.cells,
     audit: state.audit,
     incidents: state.incidents,
+    lastSeen: state.lastSeen,
   };
   downloadJson(payload, `toronto-search-grid-${new Date().toISOString().slice(0, 10)}.json`);
   addAudit("state_exported", null, {
@@ -2024,6 +2202,7 @@ async function importState(event) {
     state.incidents = Array.isArray(imported.incidents)
       ? imported.incidents
       : state.incidents;
+    state.lastSeen = imported.lastSeen || null;
     activeCellId = null;
     addAudit("state_imported", null, {
       cellCount: Object.keys(state.cells).length,

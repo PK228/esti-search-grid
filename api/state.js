@@ -62,6 +62,31 @@ async function redisSet(value) {
   }
 }
 
+function sanitizeLastSeen(input) {
+  if (!input || typeof input !== "object") {
+    return null;
+  }
+  const lat = Number(input.lat);
+  const lng = Number(input.lng);
+  if (!Number.isFinite(lat) || lat < -90 || lat > 90) {
+    return null;
+  }
+  if (!Number.isFinite(lng) || lng < -180 || lng > 180) {
+    return null;
+  }
+  return {
+    lat,
+    lng,
+    time: typeof input.time === "string" ? input.time.slice(0, 40) : "",
+    note: typeof input.note === "string" ? input.note.slice(0, 300) : "",
+    setBy: typeof input.setBy === "string" ? input.setBy.slice(0, 80) : "",
+    updatedAt:
+      typeof input.updatedAt === "string"
+        ? input.updatedAt
+        : new Date().toISOString(),
+  };
+}
+
 function sanitizeState(input) {
   const now = new Date().toISOString();
   const cells = input && typeof input.cells === "object" ? input.cells : {};
@@ -76,6 +101,7 @@ function sanitizeState(input) {
     cells,
     audit,
     incidents,
+    lastSeen: sanitizeLastSeen(input?.lastSeen),
   };
 }
 

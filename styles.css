@@ -709,6 +709,35 @@ select:focus {
   box-shadow: 0 0 0 3px rgba(109, 40, 217, 0.25);
 }
 
+.volunteer-marker {
+  position: relative;
+}
+
+.volunteer-dot {
+  display: block;
+  width: 14px;
+  height: 14px;
+  border: 2px solid #fff;
+  border-radius: 999px;
+  background: var(--green);
+  box-shadow: 0 0 0 2px rgba(22, 128, 60, 0.4);
+}
+
+.volunteer-name {
+  position: absolute;
+  left: 18px;
+  top: -2px;
+  white-space: nowrap;
+  color: #0f172a;
+  font-size: 11px;
+  font-weight: 800;
+  text-shadow:
+    0 1px 0 #fff,
+    1px 0 0 #fff,
+    0 -1px 0 #fff,
+    -1px 0 0 #fff;
+}
+
 .toast {
   position: fixed;
   right: 16px;

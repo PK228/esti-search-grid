@@ -14,6 +14,9 @@ const SHARED_API_BASE = location.hostname.endsWith("github.io")
   : "";
 const SHARED_STATE_API = `${SHARED_API_BASE}/api/state`;
 const SHARED_POLL_MS = 3500;
+const POSITIONS_API = `${SHARED_API_BASE}/api/positions`;
+const POSITION_SYNC_MS = 30 * 1000;
+const POSITION_IDLE_MS = 10 * 60 * 1000;
 
 const SEARCH_AREA = {
   name: "Keele / Yonge / Steeles / Eglinton",
@@ -96,6 +99,9 @@ let map;
 let gridLayer;
 let boundaryLayer;
 let labelLayer;
+let volunteerLayer;
+let lastGpsFix = null;
+let positionSyncTimer = null;
 let gpsMarker;
 let gpsAccuracy;
 let gpsWatchId = null;
@@ -133,6 +139,7 @@ function init() {
   updateGpsStatus("GPS idle");
   refreshModeButtons();
   startSharedSync();
+  startPositionSync();
   staleTimer = window.setInterval(() => scanStaleCells(), HEARTBEAT_SCAN_MS);
 }
 
@@ -480,6 +487,7 @@ function setupMap() {
   ).addTo(map);
 
   labelLayer = L.layerGroup().addTo(map);
+  volunteerLayer = L.layerGroup().addTo(map);
   renderLabels();
   map.on("zoomend", renderLabels);
   map.fitBounds(areaBounds.pad(0.08));
@@ -1665,6 +1673,7 @@ function toggleGps() {
     navigator.geolocation.clearWatch(gpsWatchId);
     gpsWatchId = null;
     gpsCellId = null;
+    lastGpsFix = null;
     didCenterGps = false;
     document.getElementById("locateBtn").textContent = "Locate me";
     updateGpsStatus("GPS stopped");
@@ -1689,6 +1698,8 @@ function toggleGps() {
 function handleGps(position) {
   const { latitude, longitude, accuracy } = position.coords;
   const latLng = [latitude, longitude];
+  const firstFix = !lastGpsFix;
+  lastGpsFix = { lat: latitude, lng: longitude, accuracy: accuracy || null };
 
   if (!gpsMarker) {
     gpsMarker = L.marker(latLng, {
@@ -1735,6 +1746,10 @@ function handleGps(position) {
   } else {
     updateGpsStatus(`GPS: outside search area, accuracy ${Math.round(accuracy || 0)} m`);
   }
+
+  if (firstFix) {
+    pushMyPosition();
+  }
 }
 
 function handleGpsError(error) {
@@ -1746,6 +1761,86 @@ function handleGpsError(error) {
       : "GPS could not get a position.";
   updateGpsStatus(message);
   showToast(message);
+}
+
+function startPositionSync() {
+  fetchVolunteerPositions();
+  positionSyncTimer = window.setInterval(() => {
+    pushMyPosition();
+    fetchVolunteerPositions();
+  }, POSITION_SYNC_MS);
+}
+
+async function pushMyPosition() {
+  // Autoshare: whenever GPS is on, this phone broadcasts its location.
+  if (gpsWatchId === null || !lastGpsFix) {
+    return;
+  }
+  try {
+    await fetch(POSITIONS_API, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        userId: state.profile.userId,
+        name: state.profile.name || "Volunteer",
+        team: state.profile.team || "",
+        lat: lastGpsFix.lat,
+        lng: lastGpsFix.lng,
+        accuracy: lastGpsFix.accuracy,
+      }),
+    });
+  } catch {
+    // Position sharing is best-effort; ignore transient network failures.
+  }
+}
+
+async function fetchVolunteerPositions() {
+  try {
+    const response = await fetch(`${POSITIONS_API}?t=${Date.now()}`, {
+      cache: "no-store",
+    });
+    if (!response.ok) {
+      return;
+    }
+    const payload = await response.json();
+    renderVolunteerMarkers(Array.isArray(payload.positions) ? payload.positions : []);
+  } catch {
+    // Keep the last drawn markers if a refresh fails.
+  }
+}
+
+function renderVolunteerMarkers(positions) {
+  if (!volunteerLayer) {
+    return;
+  }
+  volunteerLayer.clearLayers();
+  const now = Date.now();
+  positions.forEach((position) => {
+    if (!position || position.userId === state.profile.userId) {
+      return;
+    }
+    if (!Number.isFinite(position.lat) || !Number.isFinite(position.lng)) {
+      return;
+    }
+    if (
+      typeof position.updatedAt === "number" &&
+      now - position.updatedAt > POSITION_IDLE_MS
+    ) {
+      return;
+    }
+    const name = escapeHtml(position.name || "Volunteer");
+    const marker = L.marker([position.lat, position.lng], {
+      interactive: false,
+      icon: L.divIcon({
+        className: "volunteer-marker",
+        html: `<span class="volunteer-dot"></span><span class="volunteer-name">${name}</span>`,
+        iconSize: [14, 14],
+        iconAnchor: [7, 7],
+      }),
+      zIndexOffset: 800,
+    });
+    volunteerLayer.addLayer(marker);
+  });
 }
 
 function findContainingCell(lng, lat) {

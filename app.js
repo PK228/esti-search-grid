@@ -470,11 +470,48 @@ function setupMap() {
     preferCanvas: true,
   });
 
-  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+  const streetLayer = L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
     maxZoom: 19,
     attribution:
       '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
-  }).addTo(map);
+  });
+
+  const satelliteLayer = L.tileLayer(
+    "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+    {
+      maxZoom: 19,
+      attribution: "Tiles &copy; Esri &mdash; Source: Esri, Maxar, Earthstar Geographics",
+    },
+  );
+
+  let activeBaseLayer = streetLayer;
+  streetLayer.addTo(map);
+
+  const SatToggle = L.Control.extend({
+    onAdd() {
+      const btn = L.DomUtil.create("button", "leaflet-sat-toggle");
+      btn.title = "Toggle satellite view";
+      btn.textContent = "Satellite";
+      L.DomEvent.on(btn, "click", (e) => {
+        L.DomEvent.stopPropagation(e);
+        if (activeBaseLayer === streetLayer) {
+          map.removeLayer(streetLayer);
+          satelliteLayer.addTo(map);
+          activeBaseLayer = satelliteLayer;
+          btn.textContent = "Street";
+          btn.classList.add("active");
+        } else {
+          map.removeLayer(satelliteLayer);
+          streetLayer.addTo(map);
+          activeBaseLayer = streetLayer;
+          btn.textContent = "Satellite";
+          btn.classList.remove("active");
+        }
+      });
+      return btn;
+    },
+  });
+  new SatToggle({ position: "topright" }).addTo(map);
 
   boundaryLayer = L.polygon(boundaryLatLng, {
     color: "#111827",

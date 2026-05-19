@@ -1,6 +1,15 @@
-const STATE_KEY = "esti-search-grid:shared-state:v1";
+const LEGACY_STATE_KEY = "esti-search-grid:shared-state:v1";
 const MAX_AUDIT_EVENTS = 1500;
 const MAX_INCIDENTS = 500;
+const MAX_MISSING_STREETS = 500;
+const MAX_ZONES = 1000;
+
+function stateKey(searchId) {
+  if (searchId && /^[a-zA-Z0-9_-]{1,64}$/.test(searchId)) {
+    return `esti:search:${searchId}:state`;
+  }
+  return LEGACY_STATE_KEY;
+}
 
 function json(res, status, body) {
   res.statusCode = status;
@@ -18,13 +27,13 @@ function getRedisConfig() {
   };
 }
 
-async function redisGet() {
+async function redisGet(key) {
   const { url, token } = getRedisConfig();
   if (!url || !token) {
     throw new Error("Redis is not configured");
   }
 
-  const response = await fetch(`${url}/get/${encodeURIComponent(STATE_KEY)}`, {
+  const response = await fetch(`${url}/get/${encodeURIComponent(key)}`, {
     headers: {
       Authorization: `Bearer ${token}`,
     },
@@ -42,13 +51,13 @@ async function redisGet() {
   return JSON.parse(payload.result);
 }
 
-async function redisSet(value) {
+async function redisSet(key, value) {
   const { url, token } = getRedisConfig();
   if (!url || !token) {
     throw new Error("Redis is not configured");
   }
 
-  const response = await fetch(`${url}/set/${encodeURIComponent(STATE_KEY)}`, {
+  const response = await fetch(`${url}/set/${encodeURIComponent(key)}`, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${token}`,
@@ -60,6 +69,14 @@ async function redisSet(value) {
   if (!response.ok) {
     throw new Error(`Redis set failed: ${response.status}`);
   }
+}
+
+const MAX_PHOTO_BYTES = 200_000; // ~150 KB compressed JPEG
+
+function sanitizePhoto(value) {
+  if (typeof value !== "string") return "";
+  if (!value.startsWith("data:image/")) return "";
+  return value.length <= MAX_PHOTO_BYTES ? value : "";
 }
 
 function sanitizeLastSeen(input) {
@@ -85,6 +102,83 @@ function sanitizeLastSeen(input) {
       typeof input.updatedAt === "string"
         ? input.updatedAt
         : new Date().toISOString(),
+    photoData: sanitizePhoto(input.photoData),
+  };
+}
+
+function sanitizeMissingPerson(input) {
+  if (!input || typeof input !== "object") return null;
+  return {
+    name: typeof input.name === "string" ? input.name.slice(0, 120) : "",
+    age: typeof input.age === "string" ? input.age.slice(0, 10) : "",
+    gender: typeof input.gender === "string" ? input.gender.slice(0, 30) : "",
+    category: typeof input.category === "string" ? input.category.slice(0, 30) : "",
+    description: typeof input.description === "string" ? input.description.slice(0, 500) : "",
+    clothing: typeof input.clothing === "string" ? input.clothing.slice(0, 300) : "",
+    medicalNotes: typeof input.medicalNotes === "string" ? input.medicalNotes.slice(0, 500) : "",
+    photoData: sanitizePhoto(input.photoData),
+  };
+}
+
+function sanitizeClue(input) {
+  if (!input || typeof input !== "object" || typeof input.id !== "string") return null;
+  return {
+    id: input.id.slice(0, 80),
+    gridId: typeof input.gridId === "string" ? input.gridId.slice(0, 10) : null,
+    type: typeof input.type === "string" ? input.type.slice(0, 30) : "other",
+    description: typeof input.description === "string" ? input.description.slice(0, 400) : "",
+    lat: Number.isFinite(Number(input.lat)) ? Number(input.lat) : null,
+    lng: Number.isFinite(Number(input.lng)) ? Number(input.lng) : null,
+    photoData: sanitizePhoto(input.photoData),
+    loggedBy: input.loggedBy && typeof input.loggedBy === "object"
+      ? { name: String(input.loggedBy.name || "").slice(0, 80), userId: String(input.loggedBy.userId || "").slice(0, 60) }
+      : { name: "", userId: "" },
+    loggedAt: typeof input.loggedAt === "string" ? input.loggedAt : new Date().toISOString(),
+    resolved: Boolean(input.resolved),
+    resolvedBy: typeof input.resolvedBy === "string" ? input.resolvedBy.slice(0, 80) : "",
+    resolvedAt: typeof input.resolvedAt === "string" ? input.resolvedAt : "",
+  };
+}
+
+function sanitizeZoneRecord(input) {
+  if (!input || typeof input !== "object") return null;
+  return {
+    status: typeof input.status === "string" ? input.status.slice(0, 30) : "UNASSIGNED",
+    assignedTeam: typeof input.assignedTeam === "string" ? input.assignedTeam.slice(0, 80) : "",
+    captain: typeof input.captain === "string" ? input.captain.slice(0, 80) : "",
+    unitsVisited: typeof input.unitsVisited === "string" ? input.unitsVisited.slice(0, 200) : "",
+    revisitReason: typeof input.revisitReason === "string" ? input.revisitReason.slice(0, 400) : "",
+    updatedAt: typeof input.updatedAt === "string" ? input.updatedAt : "",
+    updatedBy: typeof input.updatedBy === "string" ? input.updatedBy.slice(0, 80) : "",
+  };
+}
+
+function sanitizeZones(input) {
+  if (!input || typeof input !== "object" || Array.isArray(input)) return {};
+  return Object.fromEntries(
+    Object.entries(input)
+      .slice(0, MAX_ZONES)
+      .map(([id, record]) => {
+        if (!/^[a-zA-Z0-9_-]{1,40}$/.test(id)) return null;
+        const sanitized = sanitizeZoneRecord(record);
+        return sanitized ? [id, sanitized] : null;
+      })
+      .filter(Boolean),
+  );
+}
+
+function sanitizeMissingStreet(input) {
+  if (!input || typeof input !== "object") return null;
+  return {
+    id: typeof input.id === "string" ? input.id.slice(0, 60) : "",
+    timestamp: typeof input.timestamp === "string" ? input.timestamp : new Date().toISOString(),
+    submittedBy: typeof input.submittedBy === "string" ? input.submittedBy.slice(0, 80) : "",
+    neighborhood: typeof input.neighborhood === "string" ? input.neighborhood.slice(0, 80) : "",
+    street: typeof input.street === "string" ? input.street.slice(0, 120) : "",
+    intersection: typeof input.intersection === "string" ? input.intersection.slice(0, 160) : "",
+    estimatedUnits: typeof input.estimatedUnits === "string" ? input.estimatedUnits.slice(0, 20) : "",
+    notes: typeof input.notes === "string" ? input.notes.slice(0, 400) : "",
+    status: typeof input.status === "string" ? input.status.slice(0, 30) : "PENDING",
   };
 }
 
@@ -96,13 +190,30 @@ function sanitizeState(input) {
     ? input.incidents.slice(-MAX_INCIDENTS)
     : [];
 
+  const lastSeenTrail = Array.isArray(input?.lastSeenTrail)
+    ? input.lastSeenTrail.slice(-10).map(sanitizeLastSeen).filter(Boolean)
+    : [];
+
+  const clues = Array.isArray(input?.clues)
+    ? input.clues.slice(-200).map(sanitizeClue).filter(Boolean)
+    : [];
+
+  const missingStreets = Array.isArray(input?.missingStreets)
+    ? input.missingStreets.slice(-MAX_MISSING_STREETS).map(sanitizeMissingStreet).filter(Boolean)
+    : [];
+
   return {
-    version: 1,
+    version: 2,
     updatedAt: now,
     cells,
+    zones: sanitizeZones(input?.zones),
+    missingStreets,
     audit,
     incidents,
     lastSeen: sanitizeLastSeen(input?.lastSeen),
+    lastSeenTrail,
+    clues,
+    missingPerson: sanitizeMissingPerson(input?.missingPerson),
   };
 }
 
@@ -126,7 +237,9 @@ module.exports = async function handler(req, res) {
 
   try {
     if (req.method === "GET") {
-      const state = (await redisGet()) || sanitizeState({});
+      const searchId = req.query?.s || null;
+      const key = stateKey(searchId);
+      const state = (await redisGet(key)) || sanitizeState({});
       json(res, 200, { ok: true, state });
       return;
     }
@@ -134,8 +247,10 @@ module.exports = async function handler(req, res) {
     if (req.method === "POST") {
       const raw = await readBody(req);
       const payload = raw ? JSON.parse(raw) : {};
+      const searchId = payload?.searchId || req.query?.s || null;
+      const key = stateKey(searchId);
       const state = sanitizeState(payload);
-      await redisSet(state);
+      await redisSet(key, state);
       json(res, 200, { ok: true, state });
       return;
     }

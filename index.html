@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Esti Search Grid</title>
+    <title>ESTI — Emergency Search &amp; Tactical Intelligence</title>
     <link
       rel="stylesheet"
       href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
@@ -11,14 +11,15 @@
     <link rel="stylesheet" href="./styles.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@turf/turf@6/turf.min.js"></script>
-    <script defer src="./app.js"></script>
+    <!-- app.js retained as fallback; active entry point is src/main.js -->
+    <script type="module" src="./src/main.js"></script>
   </head>
   <body>
     <div class="app-shell">
       <header class="topbar">
         <div class="brand-block">
           <p class="eyebrow">Keele to Yonge, Steeles to Eglinton</p>
-          <h1>Esti Search Grid</h1>
+          <h1>ESTI</h1>
         </div>
         <div class="top-actions" aria-label="Map actions">
           <button id="locateBtn" class="button primary" type="button">
@@ -26,12 +27,17 @@
           </button>
           <button id="areaBtn" class="button" type="button">Area</button>
           <button id="heatBtn" class="button" type="button">Heat</button>
+          <button id="hastyBtn" class="button" type="button">Hasty</button>
+          <button id="poiBtn" class="button" type="button">POIs</button>
+          <button id="zonesBtn" class="button" type="button">Zones</button>
           <button id="dispatcherBtn" class="button" type="button">Dispatcher</button>
           <button id="exportBtn" class="button" type="button">Export</button>
           <button id="importBtn" class="button" type="button">Import</button>
           <input id="importFile" type="file" accept="application/json" hidden />
         </div>
       </header>
+
+      <div id="poiFilterBar" class="poi-filter-bar" hidden></div>
 
       <a class="hotline-bar" href="tel:+16475576735">
         <span class="hotline-label">Shomrim hotline</span>

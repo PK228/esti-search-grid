@@ -1,6 +1,13 @@
-const POSITIONS_KEY = "esti-search-grid:positions:v1";
+const LEGACY_POSITIONS_KEY = "esti-search-grid:positions:v1";
 const IDLE_MS = 10 * 60 * 1000;
 const MAX_POSITIONS = 600;
+
+function positionsKey(searchId) {
+  if (searchId && /^[a-zA-Z0-9_-]{1,64}$/.test(searchId)) {
+    return `esti:search:${searchId}:positions`;
+  }
+  return LEGACY_POSITIONS_KEY;
+}
 
 function json(res, status, body) {
   res.statusCode = status;
@@ -18,13 +25,13 @@ function getRedisConfig() {
   };
 }
 
-async function redisGet() {
+async function redisGet(key) {
   const { url, token } = getRedisConfig();
   if (!url || !token) {
     throw new Error("Redis is not configured");
   }
 
-  const response = await fetch(`${url}/get/${encodeURIComponent(POSITIONS_KEY)}`, {
+  const response = await fetch(`${url}/get/${encodeURIComponent(key)}`, {
     headers: {
       Authorization: `Bearer ${token}`,
     },
@@ -47,13 +54,13 @@ async function redisGet() {
   }
 }
 
-async function redisSet(value) {
+async function redisSet(key, value) {
   const { url, token } = getRedisConfig();
   if (!url || !token) {
     throw new Error("Redis is not configured");
   }
 
-  const response = await fetch(`${url}/set/${encodeURIComponent(POSITIONS_KEY)}`, {
+  const response = await fetch(`${url}/set/${encodeURIComponent(key)}`, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${token}`,
@@ -142,7 +149,9 @@ module.exports = async function handler(req, res) {
         json(res, 403, { ok: false, error: "Location feed is restricted" });
         return;
       }
-      const positions = prune(await redisGet());
+      const searchId = req.query?.s || null;
+      const key = positionsKey(searchId);
+      const positions = prune(await redisGet(key));
       json(res, 200, { ok: true, positions: Object.values(positions) });
       return;
     }
@@ -156,7 +165,9 @@ module.exports = async function handler(req, res) {
         return;
       }
 
-      const positions = prune(await redisGet());
+      const searchId = payload?.searchId || req.query?.s || null;
+      const key = positionsKey(searchId);
+      const positions = prune(await redisGet(key));
       positions[position.userId] = position;
 
       const entries = Object.entries(positions);
@@ -165,7 +176,7 @@ module.exports = async function handler(req, res) {
           ? Object.fromEntries(entries.slice(-MAX_POSITIONS))
           : positions;
 
-      await redisSet(capped);
+      await redisSet(key, capped);
       json(res, 200, { ok: true, positions: Object.values(capped) });
       return;
     }

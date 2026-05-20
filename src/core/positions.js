@@ -1,4 +1,4 @@
-import { POSITIONS_API, POSITION_SYNC_MS, POSITIONS_KEY_STORE, POSITION_IDLE_MS, SEARCH_ID } from "./constants.js";
+import { POSITIONS_API, POSITION_SYNC_MS, POSITIONS_KEY_STORE, POSITION_IDLE_MS, POSITION_FRESH_MS, POSITION_STALE_MS, SEARCH_ID } from "./constants.js";
 import { state } from "./state.js";
 import { store } from "./store.js";
 import { showToast } from "../utils/toast.js";
@@ -96,11 +96,13 @@ function renderVolunteerMarkers(positions) {
     if (!Number.isFinite(position.lat) || !Number.isFinite(position.lng)) return;
     if (typeof position.updatedAt === "number" && now - position.updatedAt > POSITION_IDLE_MS) return;
     const name = escapeAttr(position.name || "Volunteer");
+    const age = now - (position.updatedAt || 0);
+    const freshnessClass = age < POSITION_FRESH_MS ? "vol-fresh" : age < POSITION_STALE_MS ? "vol-stale" : "vol-offgrid";
     const marker = L.marker([position.lat, position.lng], {
       interactive: false,
       icon: L.divIcon({
         className: "volunteer-marker",
-        html: `<span class="volunteer-dot"></span><span class="volunteer-name">${name}</span>`,
+        html: `<span class="volunteer-dot ${freshnessClass}"></span><span class="volunteer-name">${name}</span>`,
         iconSize: [14, 14],
         iconAnchor: [7, 7],
       }),

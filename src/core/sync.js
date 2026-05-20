@@ -18,8 +18,10 @@ export async function fetchSharedState(options = {}) {
     const payload = await response.json();
     const remote = payload.state || {};
     if (remote.updatedAt && remote.updatedAt !== store.lastSharedUpdatedAt) {
-      applySharedState(remote);
-      store.lastSharedUpdatedAt = remote.updatedAt;
+      const applied = applySharedState(remote);
+      // Only advance the cursor if the state was actually applied; if a write
+      // was in flight we skipped the apply — try again on the next poll.
+      if (applied) store.lastSharedUpdatedAt = remote.updatedAt;
     }
     store.sharedWritesPaused = false;
     setSharedSyncStatus("live");
@@ -33,7 +35,7 @@ export async function fetchSharedState(options = {}) {
 }
 
 function applySharedState(remote) {
-  if (store.sharedWriteInFlight || store.sharedWriteQueued) return;
+  if (store.sharedWriteInFlight || store.sharedWriteQueued) return false;
 
   state.cells = normalizeCells(
     remote.cells && typeof remote.cells === "object" ? remote.cells : {},
@@ -54,6 +56,7 @@ function applySharedState(remote) {
   }
   saveLocalOnly();
   document.dispatchEvent(new CustomEvent("esti:shared-state-applied"));
+  return true;
 }
 
 export function scheduleSharedWrite() {
@@ -81,7 +84,9 @@ export async function pushSharedState() {
     setSharedSyncStatus("live");
   } catch {
     setSharedSyncStatus("offline");
-    showToast("Shared sync failed; changes are saved on this phone.");
+    showToast("Shared sync failed — will retry.");
+    // Reschedule so the local change eventually reaches the server.
+    window.setTimeout(() => scheduleSharedWrite(), 8000);
   } finally {
     store.sharedWriteInFlight = false;
   }

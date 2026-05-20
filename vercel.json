@@ -1,0 +1,7 @@
+{
+  "rewrites": [
+    { "source": "/v/:token", "destination": "/v.html" },
+    { "source": "/intake", "destination": "/intake.html" },
+    { "source": "/dispatch", "destination": "/dispatch.html" }
+  ]
+}

@@ -9,7 +9,7 @@ import {
   updateCell, sendHeartbeat, releaseCell, clearCell, scanStaleCells,
 } from "../grid/cells.js";
 import { getOpenIncidentForGrid, resolveIncidentForGrid } from "../grid/incidents.js";
-import { renderDispatcherDashboard, renderDispatcherLogin, bindDispatcherLogin } from "./dispatcher.js";
+import { renderDispatcherDashboard, renderDispatcherLogin, bindDispatcherLogin, loadVolunteerQueue } from "./dispatcher.js";
 import { renderZonePanel, renderZoneDetail, bindZonePanel, bindZoneDetail } from "./zone-panel.js";
 import { exportState, exportAudit } from "../utils/export.js";
 import { togglePlaceLastSeen, removeLastSeen, clearLastSeenTrail, geocodeLastSeen, saveLastSeenDetails, handleLastSeenPhoto, renderClueMarkers } from "./map.js";
@@ -46,6 +46,7 @@ export function renderPanel() {
   if (!store.activeCellId) {
     panel.innerHTML = renderCommandPanel();
     bindCommandPanel();
+    if (state.profile.dispatcher) loadVolunteerQueue();
     return;
   }
   panel.innerHTML = renderCellPanel(store.activeCellId);
@@ -229,7 +230,10 @@ function bindCommandPanel() {
 
   document.getElementById("runStaleBtn")?.addEventListener("click", () => scanStaleCells({ manual: true }));
   document.getElementById("exportAuditBtn")?.addEventListener("click", exportAudit);
-  document.getElementById("positionsKeyBtn")?.addEventListener("click", savePositionsKey);
+  document.getElementById("positionsKeyBtn")?.addEventListener("click", async () => {
+    await savePositionsKey();
+    loadVolunteerQueue();
+  });
   document.getElementById("placeLastSeenBtn")?.addEventListener("click", togglePlaceLastSeen);
   document.getElementById("removeLastSeenBtn")?.addEventListener("click", removeLastSeen);
   document.getElementById("clearTrailBtn")?.addEventListener("click", clearLastSeenTrail);

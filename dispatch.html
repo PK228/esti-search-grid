@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Esti — Dispatcher Access</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body {
+      height: 100%;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #0f172a; color: #f1f5f9;
+    }
+
+    .page {
+      min-height: 100dvh;
+      display: flex; flex-direction: column;
+      justify-content: center; align-items: center;
+      padding: 32px 16px;
+    }
+
+    .card {
+      width: 100%; max-width: 380px;
+      background: #1e293b; border-radius: 16px;
+      border: 1px solid #334155;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+      padding: 32px 28px;
+      display: flex; flex-direction: column; gap: 22px;
+    }
+
+    .card-header { text-align: center; }
+    .card-badge {
+      display: inline-block; background: #ef4444; color: #fff;
+      font-size: 10px; font-weight: 800; text-transform: uppercase;
+      letter-spacing: 0.1em; border-radius: 4px; padding: 3px 8px;
+      margin-bottom: 10px;
+    }
+    .card-title { font-size: 26px; font-weight: 900; color: #f8fafc; }
+    .card-sub { font-size: 13px; color: #94a3b8; margin-top: 6px; line-height: 1.4; }
+
+    .form-grid { display: flex; flex-direction: column; gap: 14px; }
+    label { display: flex; flex-direction: column; gap: 5px; }
+    .label-text {
+      font-size: 11px; font-weight: 700; text-transform: uppercase;
+      letter-spacing: 0.06em; color: #64748b;
+    }
+    input[type="password"], input[type="text"] {
+      width: 100%; border: 1.5px solid #334155; border-radius: 9px;
+      padding: 13px 14px; font-size: 20px; letter-spacing: 0.18em;
+      color: #f1f5f9; background: #0f172a; outline: none;
+      transition: border-color 0.15s;
+    }
+    input:focus { border-color: #3b82f6; box-shadow: 0 0 0 3px rgba(59,130,246,0.18); }
+
+    .submit-btn {
+      width: 100%; padding: 15px; background: #2563eb; color: #fff;
+      border: none; border-radius: 10px; font-size: 16px; font-weight: 700;
+      cursor: pointer; transition: background 0.15s;
+    }
+    .submit-btn:hover { background: #1d4ed8; }
+    .submit-btn:disabled { background: #1e3a6a; cursor: not-allowed; }
+
+    .error-msg {
+      background: rgba(239,68,68,0.15); color: #fca5a5; border-radius: 8px;
+      border: 1px solid rgba(239,68,68,0.3);
+      padding: 10px 13px; font-size: 13px; font-weight: 600;
+      display: none;
+    }
+    .error-msg.visible { display: block; }
+
+    .search-id-row {
+      display: flex; flex-direction: column; gap: 5px;
+    }
+    .hint { font-size: 11px; color: #475569; }
+  </style>
+</head>
+<body>
+<div class="page">
+  <div class="card">
+    <div class="card-header">
+      <span class="card-badge">Restricted</span>
+      <div class="card-title">Dispatcher Access</div>
+      <div class="card-sub">Enter your PIN to open the command dashboard. Keep this page closed when not in use.</div>
+    </div>
+
+    <form id="dispatchForm" class="form-grid" novalidate>
+      <div class="search-id-row">
+        <label>
+          <span class="label-text">Search ID</span>
+          <input id="searchId" type="text" autocomplete="off" placeholder="e.g. abc1234xyz" spellcheck="false" />
+        </label>
+        <span class="hint">Leave blank to use the default operation.</span>
+      </div>
+      <label>
+        <span class="label-text">Dispatcher PIN</span>
+        <input id="pin" type="password" inputmode="numeric" autocomplete="off" placeholder="••••" />
+      </label>
+      <div id="errorMsg" class="error-msg"></div>
+      <button type="submit" class="submit-btn" id="submitBtn">Enter Dispatcher Mode</button>
+    </form>
+  </div>
+</div>
+
+<script>
+(function () {
+  // Pre-fill search ID from URL if provided (?s=...)
+  const params = new URLSearchParams(window.location.search);
+  const sParam = params.get("s");
+  if (sParam) document.getElementById("searchId").value = sParam;
+
+  const CORRECT_PIN = "2468";
+
+  document.getElementById("dispatchForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const pin      = document.getElementById("pin").value.trim();
+    const searchId = document.getElementById("searchId").value.trim();
+    const errorEl  = document.getElementById("errorMsg");
+    const btn      = document.getElementById("submitBtn");
+
+    errorEl.className = "error-msg";
+
+    if (!pin) {
+      errorEl.textContent = "Enter your dispatcher PIN.";
+      errorEl.className = "error-msg visible";
+      return;
+    }
+
+    if (pin !== CORRECT_PIN) {
+      errorEl.textContent = "Incorrect PIN.";
+      errorEl.className = "error-msg visible";
+      return;
+    }
+
+    btn.disabled = true;
+    btn.textContent = "Opening dashboard…";
+
+    // Try to fetch the positions key from the server (best-effort, never blocks login).
+    try {
+      const res  = await fetch(`${window.location.origin}/api/dispatcher-auth`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ pin }),
+      });
+      const data = await res.json();
+      if (data.ok && data.positionsKey) {
+        localStorage.setItem("esti-search-grid-positions-key", data.positionsKey);
+      }
+    } catch { /* no server — positions key can be entered manually in dashboard */ }
+
+    localStorage.setItem("esti-dispatcher-autologin", "1");
+    localStorage.setItem("esti-dispatcher-pin-entry", pin);
+
+    const qs = searchId ? `?s=${encodeURIComponent(searchId)}` : "";
+    setTimeout(() => { window.location.href = `${window.location.origin}/${qs}`; }, 300);
+  });
+})();
+</script>
+</body>
+</html>

@@ -294,6 +294,20 @@ h3 {
   background: #fee2e2;
 }
 
+.sync-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #94a3b8;
+  margin-left: 6px;
+  vertical-align: middle;
+  flex-shrink: 0;
+}
+.sync-dot--live { background: #16a34a; }
+.sync-dot--offline { background: #ef4444; }
+.sync-dot--connecting { background: #f59e0b; }
+
 .summary-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -622,6 +636,44 @@ select:focus {
   font-size: 10px;
 }
 
+.leaflet-trace-control {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  background: #fff;
+  border: 2px solid rgba(0,0,0,0.2);
+  border-radius: 4px;
+  box-shadow: 0 1px 5px rgba(0,0,0,0.2);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.trace-count {
+  color: var(--muted);
+  min-width: 36px;
+}
+
+.trace-btn {
+  padding: 3px 8px;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  background: var(--surface);
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.trace-done {
+  background: #f59e0b;
+  color: #fff;
+  border-color: #d97706;
+}
+
+.trace-cancel {
+  color: var(--muted);
+}
+
 .leaflet-sat-toggle {
   display: block;
   padding: 5px 10px;
@@ -754,6 +806,18 @@ select:focus {
   border-radius: 999px;
   background: var(--green);
   box-shadow: 0 0 0 2px rgba(22, 128, 60, 0.4);
+}
+.volunteer-dot.vol-fresh {
+  background: #16a34a;
+  box-shadow: 0 0 0 2px rgba(22, 163, 74, 0.4);
+}
+.volunteer-dot.vol-stale {
+  background: #d97706;
+  box-shadow: 0 0 0 2px rgba(217, 119, 6, 0.4);
+}
+.volunteer-dot.vol-offgrid {
+  background: #6b7280;
+  box-shadow: 0 0 0 2px rgba(107, 114, 128, 0.4);
 }
 
 .volunteer-name {
@@ -1550,4 +1614,52 @@ select:focus {
   .zone-filter-row select {
     min-width: calc(50% - 3px);
   }
+}
+
+/* Volunteer queue */
+.volunteer-queue-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 8px 0;
+}
+.volunteer-queue-row {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.vq-name {
+  font-weight: 700;
+  font-size: 14px;
+}
+.vq-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+.vq-call {
+  color: var(--blue);
+  text-decoration: none;
+  font-weight: 600;
+}
+.vq-cell {
+  font-family: monospace;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--blue);
+}
+.vq-send {
+  font-size: 13px;
+  padding: 7px 12px;
+  text-decoration: none;
+  display: inline-block;
+  border-radius: 6px;
+  width: fit-content;
 }

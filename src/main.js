@@ -4,11 +4,12 @@ import { startSharedSync } from "./core/sync.js";
 import { startPositionSync } from "./core/positions.js";
 import { HEARTBEAT_SCAN_MS } from "./core/constants.js";
 import { addAudit } from "./core/audit.js";
-import { buildGrid } from "./grid/builder.js";
+import { buildGrid, buildExtendedGrid } from "./grid/builder.js";
 import { scanStaleCells } from "./grid/cells.js";
 import { refreshGrid } from "./grid/renderer.js";
 import { setupMap, toggleHastyMode, togglePoiOverlay, renderHastyOverlay } from "./ui/map.js";
 import { toggleGps, updateGpsStatus } from "./ui/gps.js";
+import { startTraceBoundary, cancelTraceBoundary } from "./ui/map.js";
 import { renderPanel } from "./ui/panel.js";
 import { exportState, importStateFromFile } from "./utils/export.js";
 import { showToast } from "./utils/toast.js";
@@ -27,7 +28,9 @@ function init() {
   }
 
   ensureIdentity();
+  _tryDispatcherAutoLogin();
   buildGrid();
+  buildExtendedGrid();
   scanStaleCells({ silent: true });
   setupMap(selectCell);
   _bindGlobalActions();
@@ -57,7 +60,15 @@ function init() {
 
   document.addEventListener("esti:sync-status-changed", () => {
     if (!store.activeCellId && !store.dispatcherLoginOpen && !store.zonePanelOpen && !_panelInputFocused()) renderPanel();
+    _updateSyncDot();
   });
+
+  function _updateSyncDot() {
+    const dot = document.getElementById("syncDot");
+    if (!dot) return;
+    dot.className = `sync-dot sync-dot--${store.sharedSyncStatus || "connecting"}`;
+    dot.title = `Sync: ${store.sharedSyncStatus || "connecting"}`;
+  }
 
   document.addEventListener("esti:dispatcher-mode-changed", () => {
     _refreshModeButtons();
@@ -100,6 +111,10 @@ function _bindGlobalActions() {
   document.getElementById("hastyBtn").addEventListener("click", toggleHastyMode);
   document.getElementById("poiBtn").addEventListener("click", togglePoiOverlay);
   document.getElementById("dispatcherBtn").addEventListener("click", _toggleDispatcherMode);
+  document.getElementById("traceBtn").addEventListener("click", () => {
+    if (store.traceBoundaryMode) cancelTraceBoundary();
+    else startTraceBoundary();
+  });
   document.getElementById("exportBtn").addEventListener("click", exportState);
   document.getElementById("importBtn").addEventListener("click", () => {
     document.getElementById("importFile").click();
@@ -108,6 +123,16 @@ function _bindGlobalActions() {
 }
 
 function _refreshModeButtons() {
+  const isDispatcher = state.profile.dispatcher || store.dispatcherLoginOpen;
+
+  // Volunteer-only view: just Locate Me + POIs.
+  // Dispatcher mode unlocks the full toolbar.
+  const dispatcherOnlyIds = ["areaBtn", "heatBtn", "hastyBtn", "zonesBtn", "dispatcherBtn", "traceBtn", "exportBtn", "importBtn"];
+  dispatcherOnlyIds.forEach((id) => {
+    const el = document.getElementById(id);
+    if (el) el.hidden = !isDispatcher;
+  });
+
   const heatBtn = document.getElementById("heatBtn");
   const hastyBtn = document.getElementById("hastyBtn");
   const poiBtn = document.getElementById("poiBtn");
@@ -136,6 +161,11 @@ function _refreshModeButtons() {
   if (zonesBtn) {
     zonesBtn.classList.toggle("active", store.zonePanelOpen);
   }
+  const traceBtn = document.getElementById("traceBtn");
+  if (traceBtn) {
+    traceBtn.textContent = store.traceBoundaryMode ? "Stop tracing" : "Trace boundary";
+    traceBtn.classList.toggle("active", store.traceBoundaryMode);
+  }
 }
 
 function _toggleZonePanel() {
@@ -162,6 +192,23 @@ function _panelInputFocused() {
   const tag = active.tagName;
   if (tag !== "INPUT" && tag !== "TEXTAREA" && tag !== "SELECT") return false;
   return document.getElementById("panel")?.contains(active) ?? false;
+}
+
+function _tryDispatcherAutoLogin() {
+  const flag = localStorage.getItem("esti-dispatcher-autologin");
+  const pin  = localStorage.getItem("esti-dispatcher-pin-entry");
+  if (flag !== "1" || !pin) return;
+  localStorage.removeItem("esti-dispatcher-autologin");
+  localStorage.removeItem("esti-dispatcher-pin-entry");
+  // Lazy import to avoid circular dep at module load time.
+  import("./ui/dispatcher.js").then(({ enterDispatcherMode: _enter }) => {
+    // Simulate the pin being typed into the hidden input.
+    const dummy = document.createElement("input");
+    dummy.id = "dispatcherPin";
+    dummy.value = pin;
+    document.body.appendChild(dummy);
+    try { _enter(); } finally { dummy.remove(); }
+  }).catch(() => {});
 }
 
 function _toggleDispatcherMode() {

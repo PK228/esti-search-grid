@@ -97,6 +97,7 @@ function loadState() {
     clues: [],
     search: defaultSearch(),
     missingPerson: defaultMissingPerson(),
+    customExtendedBoundary: null,
   };
   try {
     const raw =
@@ -115,6 +116,7 @@ function loadState() {
       clues: Array.isArray(saved.clues) ? saved.clues : [],
       search: { ...defaultSearch(), ...(saved.search || {}) },
       missingPerson: { ...defaultMissingPerson(), ...(saved.missingPerson || {}) },
+      customExtendedBoundary: Array.isArray(saved.customExtendedBoundary) ? saved.customExtendedBoundary : null,
     };
   } catch {
     return fallback;
@@ -135,6 +137,7 @@ function _statePayload() {
     clues: state.clues,
     search: state.search,
     missingPerson: state.missingPerson,
+    customExtendedBoundary: state.customExtendedBoundary || null,
     savedAt: new Date().toISOString(),
   };
 }

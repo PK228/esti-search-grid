@@ -7,6 +7,7 @@ export const store = {
   map: null,
   gridLayer: null,
   boundaryLayer: null,
+  extBoundaryLayer: null,
   labelLayer: null,
   volunteerLayer: null,
   lastSeenLayer: null,
@@ -65,4 +66,7 @@ export const store = {
 
   // Timers
   staleTimer: null,
+
+  // Boundary tracing tool (managed by map.js)
+  traceBoundaryMode: false,
 };

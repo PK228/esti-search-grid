@@ -1,4 +1,4 @@
-import { DISPATCHER_PIN } from "../core/constants.js";
+import { DISPATCHER_PIN, SHARED_API_BASE, SEARCH_ID } from "../core/constants.js";
 import { state, saveState } from "../core/state.js";
 import { store } from "../core/store.js";
 import { addAudit } from "../core/audit.js";
@@ -7,6 +7,8 @@ import { getCellsByStatus } from "../grid/cells.js";
 import { renderLastSeenControl } from "./map.js";
 import { escapeHtml, escapeAttr, formatTime } from "../utils/format.js";
 import { showToast } from "../utils/toast.js";
+
+const INTAKE_API = `${SHARED_API_BASE}/api/intake`;
 
 export function renderDispatcherDashboard() {
   const staleCells = getCellsByStatus("stale");
@@ -24,6 +26,8 @@ export function renderDispatcherDashboard() {
         <button id="runStaleBtn" class="button warning" type="button">Run stale release</button>
         <button id="exportAuditBtn" class="button" type="button">Export audit</button>
       </div>
+      <h3>Volunteer Queue</h3>
+      <div id="volunteerQueue"><p class="muted">Enter location key above to load volunteer queue.</p></div>
       <div class="dashboard-strip">
         ${dashboardList("Active", activeCells)}
         ${dashboardList("Stale", staleCells)}
@@ -34,6 +38,74 @@ export function renderDispatcherDashboard() {
       ${renderAuditLog(audit)}
     </section>
   `;
+}
+
+export async function loadVolunteerQueue() {
+  const container = document.getElementById("volunteerQueue");
+  if (!container || !store.positionsKey) return;
+  try {
+    const searchParam = SEARCH_ID ? `?s=${encodeURIComponent(SEARCH_ID)}` : "";
+    const res = await fetch(`${INTAKE_API}${searchParam}`, {
+      headers: { "x-positions-key": store.positionsKey },
+    });
+    if (!res.ok) { container.innerHTML = '<p class="muted">Could not load queue.</p>'; return; }
+    const data = await res.json();
+    const volunteers = Array.isArray(data.volunteers) ? data.volunteers : [];
+    if (!volunteers.length) { container.innerHTML = '<p class="muted">No volunteers registered yet.</p>'; return; }
+    container.innerHTML = renderVolunteerQueue(volunteers);
+  } catch {
+    container.innerHTML = '<p class="muted">Queue unavailable — check connection.</p>';
+  }
+}
+
+function renderVolunteerQueue(volunteers) {
+  return `
+    <ul class="volunteer-queue-list">
+      ${volunteers.map((v) => renderVolunteerRow(v)).join("")}
+    </ul>
+  `;
+}
+
+function renderVolunteerRow(v) {
+  const name = escapeHtml(`${v.firstName} ${v.lastName}`);
+  const phone = escapeHtml(v.phone || "");
+  const status = escapeHtml(v.status || "queued");
+  const cell = v.assignedCell ? escapeHtml(v.assignedCell) : null;
+
+  const smsLink = v.phone && v.trackingUrl && v.assignedCell
+    ? buildSmsLink(v)
+    : "";
+
+  return `
+    <li class="volunteer-queue-row">
+      <div class="vq-name">${name}</div>
+      <div class="vq-meta">
+        ${phone ? `<a href="tel:${escapeAttr(v.phone)}" class="vq-call">${phone}</a>` : ""}
+        <span class="vq-status status-pill ${_statusClass(v.status)}">${status}</span>
+        ${cell ? `<span class="vq-cell">Grid ${cell}</span>` : ""}
+      </div>
+      ${smsLink ? `<a href="${escapeAttr(smsLink)}" class="button primary vq-send">Send Assignment</a>` : ""}
+    </li>
+  `;
+}
+
+function buildSmsLink(v) {
+  const name = `${v.firstName} ${v.lastName}`;
+  const mapsUrl = v.assignedCellCoords
+    ? `https://maps.google.com/?q=${v.assignedCellCoords[1]},${v.assignedCellCoords[0]}`
+    : "";
+  const body = [
+    `Hi ${name}, you've been assigned to grid ${v.assignedCell} for the search.`,
+    mapsUrl ? `Navigate here: ${mapsUrl}` : "",
+    `Open your tracking page (keep this page open during your search): ${v.trackingUrl}`,
+  ].filter(Boolean).join("\n");
+  return `sms:${v.phone.replace(/[^\d+]/g, "")}?body=${encodeURIComponent(body)}`;
+}
+
+function _statusClass(status) {
+  if (status === "assigned") return "status-searching";
+  if (status === "completed") return "status-done";
+  return "status-open";
 }
 
 export function renderDispatcherLogin() {

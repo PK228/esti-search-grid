@@ -1,10 +1,105 @@
-import { SEARCH_AREA, KOESTER_DISTANCES, SEARCH_ID } from "../core/constants.js";
+import { SEARCH_AREA, SEARCH_AREA_EXTENDED, KOESTER_DISTANCES, SEARCH_ID } from "../core/constants.js";
 import { state, saveState } from "../core/state.js";
 import { store } from "../core/store.js";
+import { buildExtendedGrid } from "../grid/builder.js";
 import { addAudit } from "../core/audit.js";
 import { getCellStyle, renderLabels, refreshGrid } from "../grid/renderer.js";
 import { escapeHtml, escapeAttr, formatLastSeenTime, toLocalDatetimeValue } from "../utils/format.js";
 import { showToast } from "../utils/toast.js";
+
+// ---- Boundary tracing tool ----
+let _traceVertices = [];
+let _tracePolyline = null;
+let _traceMarkers = [];
+let _traceControl = null;
+
+export function startTraceBoundary() {
+  store.traceBoundaryMode = true;
+  _traceVertices = [];
+  _traceMarkers = [];
+  _tracePolyline = L.polyline([], { color: "#f59e0b", weight: 2.5, dashArray: "6,4" }).addTo(store.map);
+  store.map.getContainer().style.cursor = "crosshair";
+
+  const TraceCtrl = L.Control.extend({
+    onAdd() {
+      const div = L.DomUtil.create("div", "leaflet-trace-control");
+      div.innerHTML = `<span class="trace-count">0 pts</span>
+        <button class="trace-btn trace-undo">Undo</button>
+        <button class="trace-btn trace-done">Done</button>
+        <button class="trace-btn trace-cancel">Cancel</button>`;
+      L.DomEvent.on(div.querySelector(".trace-undo"),  "click", (e) => { L.DomEvent.stopPropagation(e); undoTraceVertex(); });
+      L.DomEvent.on(div.querySelector(".trace-done"),  "click", (e) => { L.DomEvent.stopPropagation(e); finishTraceBoundary(); });
+      L.DomEvent.on(div.querySelector(".trace-cancel"),"click", (e) => { L.DomEvent.stopPropagation(e); cancelTraceBoundary(); });
+      L.DomEvent.disableClickPropagation(div);
+      return div;
+    },
+  });
+  _traceControl = new TraceCtrl({ position: "bottomleft" });
+  _traceControl.addTo(store.map);
+}
+
+export function undoTraceVertex() {
+  if (!_traceVertices.length) return;
+  _traceVertices.pop();
+  const m = _traceMarkers.pop();
+  if (m) store.map.removeLayer(m);
+  _tracePolyline.setLatLngs(_traceVertices);
+  if (_traceControl) _traceControl.getContainer().querySelector(".trace-count").textContent = `${_traceVertices.length} pts`;
+}
+
+export function finishTraceBoundary() {
+  if (_traceVertices.length < 3) { showToast("Need at least 3 points."); return; }
+  const closed = [..._traceVertices, _traceVertices[0]];
+  const coords = closed.map(([lat, lng]) => [
+    Math.round(lng * 100000) / 100000,
+    Math.round(lat * 100000) / 100000,
+  ]);
+
+  // Persist the new boundary.
+  state.customExtendedBoundary = coords;
+  saveState();
+
+  // Replace the boundary outline layer.
+  if (store.extBoundaryLayer) store.map.removeLayer(store.extBoundaryLayer);
+  store.extBoundaryLayer = L.polygon(coords.map(([lng, lat]) => [lat, lng]), {
+    color: "#111827",
+    weight: 3,
+    opacity: 0.95,
+    fill: false,
+  }).addTo(store.map);
+
+  // Rebuild extended grid cells and refresh.
+  try {
+    buildExtendedGrid();
+    refreshGrid();
+    showToast("Boundary saved — extended grid updated.");
+  } catch (err) {
+    console.error("buildExtendedGrid failed:", err);
+    showToast("Boundary saved, but grid rebuild failed. Try a simpler boundary.");
+  }
+  cancelTraceBoundary();
+}
+
+export function cancelTraceBoundary() {
+  store.traceBoundaryMode = false;
+  if (_tracePolyline) { store.map.removeLayer(_tracePolyline); _tracePolyline = null; }
+  _traceMarkers.forEach((m) => store.map.removeLayer(m));
+  _traceMarkers = [];
+  _traceVertices = [];
+  if (_traceControl) { store.map.removeControl(_traceControl); _traceControl = null; }
+  store.map.getContainer().style.cursor = "";
+  document.dispatchEvent(new CustomEvent("esti:mode-buttons-changed"));
+}
+
+function _addTraceVertex(latlng) {
+  _traceVertices.push([latlng.lat, latlng.lng]);
+  _traceMarkers.push(
+    L.circleMarker([latlng.lat, latlng.lng], { radius: 5, color: "#f59e0b", fillColor: "#f59e0b", fillOpacity: 1, weight: 2 }).addTo(store.map),
+  );
+  _tracePolyline.setLatLngs(_traceVertices);
+  if (_traceControl) _traceControl.getContainer().querySelector(".trace-count").textContent = `${_traceVertices.length} pts`;
+}
+// ---- end tracing ----
 
 export function setupMap(onCellClick) {
   const boundaryLatLng = SEARCH_AREA.boundary.map(([lng, lat]) => [lat, lng]);
@@ -62,16 +157,22 @@ export function setupMap(onCellClick) {
     fill: false,
   }).addTo(store.map);
 
+  const initialExtBoundary = state.customExtendedBoundary || SEARCH_AREA_EXTENDED.boundary;
+  store.extBoundaryLayer = L.polygon(initialExtBoundary.map(([lng, lat]) => [lat, lng]), {
+    color: "#111827",
+    weight: 3,
+    opacity: 0.95,
+    fill: false,
+  }).addTo(store.map);
+
   store.gridLayer = L.geoJSON(
     { type: "FeatureCollection", features: store.cellFeatures },
     {
       style: getCellStyle,
       onEachFeature(feature, layer) {
         layer.on("click", (event) => {
-          if (store.placingLastSeen) {
-            placeLastSeen(event.latlng);
-            return;
-          }
+          if (store.placingLastSeen) { placeLastSeen(event.latlng); return; }
+          if (store.traceBoundaryMode) { _addTraceVertex(event.latlng); return; }
           onCellClick(feature.properties.id);
         });
         layer.on("mouseover", () => layer.setStyle({ weight: 3 }));
@@ -94,6 +195,10 @@ export function setupMap(onCellClick) {
   document.addEventListener("esti:render-clues", renderClueMarkers);
   store.map.on("zoomend", renderLabels);
   store.map.fitBounds(areaBounds.pad(0.08));
+
+  store.map.on("click", (e) => {
+    if (store.traceBoundaryMode) _addTraceVertex(e.latlng);
+  });
 
   _bindPoiFilterBar();
 

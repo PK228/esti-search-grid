@@ -16,7 +16,9 @@ export const SHARED_STATE_API = `${SHARED_API_BASE}/api/state`;
 export const SHARED_POLL_MS = 3500;
 export const POSITIONS_API = `${SHARED_API_BASE}/api/positions`;
 export const POSITION_SYNC_MS = 30 * 1000;
-export const POSITION_IDLE_MS = 10 * 60 * 1000;
+export const POSITION_FRESH_MS = 60 * 1000;
+export const POSITION_STALE_MS = 5 * 60 * 1000;
+export const POSITION_IDLE_MS = 30 * 60 * 1000;
 
 // Read ?s= from URL for multi-tenant search routing.
 const _urlParams = new URLSearchParams(window.location.search);
@@ -30,6 +32,39 @@ export const SEARCH_AREA = {
     [-79.3985, 43.7064],
     [-79.4752, 43.6907],
     [-79.4935, 43.7823],
+  ],
+};
+
+// Extended search ring: DVP/404 (east) / Hwy 400 (west) / Bloor (south) / Hwy 407 (north).
+// Cells here use E- prefix (e.g. E-A01) and never overlap the primary area.
+export const SEARCH_AREA_EXTENDED = {
+  name: "Extended — DVP / Hwy 400 / Bloor / Hwy 407",
+  boundary: [
+    [-79.36935, 43.84043],
+    [-79.33777, 43.77007],
+    [-79.32472, 43.71601],
+    [-79.34052, 43.69864],
+    [-79.34824, 43.69791],
+    [-79.35871, 43.67135],
+    [-79.34875, 43.65198],
+    [-79.41158, 43.63732],
+    [-79.43338, 43.63297],
+    [-79.4557,  43.63931],
+    [-79.47235, 43.63446],
+    [-79.48317, 43.62738],
+    [-79.54857, 43.61434],
+    [-79.57586, 43.67246],
+    [-79.59045, 43.67084],
+    [-79.63165, 43.75222],
+    [-79.6344,  43.77058],
+    [-79.54411, 43.79016],
+    [-79.54754, 43.82807],
+    [-79.50823, 43.83488],
+    [-79.43416, 43.85278],
+    [-79.41158, 43.85767],
+    [-79.37502, 43.86522],
+    [-79.36901, 43.84053],
+    [-79.36935, 43.84043],
   ],
 };
 

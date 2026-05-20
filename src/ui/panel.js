@@ -75,69 +75,44 @@ function _closeZonePanel() {
 
 function renderCommandPanel() {
   const counts = getCounts();
-  const analytics = getAnalytics(counts);
   const activity = getRecentActivity();
+  const isDispatcher = state.profile.dispatcher;
+
+  if (isDispatcher) {
+    const analytics = getAnalytics(counts);
+    return `
+      <h2>Command Board</h2>
+      <p class="muted tight">${store.cellFeatures.length} grid squares, 0.5 km each. Grid updates sync across phones; each volunteer identity stays on their own device.</p>
+      <p class="sync-line ${store.sharedSyncStatus === "live" ? "live" : "offline"}">Shared sync: ${escapeHtml(store.sharedSyncStatus)}</p>
+      <div class="summary-grid">
+        ${summaryItem(counts.open, "Open")}
+        ${summaryItem(counts.searching, "Searching")}
+        ${summaryItem(counts.done, "Complete")}
+        ${summaryItem(counts.backup + counts.emergency + counts.found, "Escalations")}
+      </div>
+      <div class="metric-grid">
+        ${metricItem(`${analytics.coverage}%`, "Coverage")}
+        ${metricItem(String(counts.stale), "Stale released")}
+        ${metricItem(String(analytics.openIncidents), "Open incidents")}
+        ${metricItem(String(analytics.volunteersSearching), "Volunteers out")}
+      </div>
+      ${renderMissingPersonSection()}
+      ${renderWhatsAppShare()}
+      ${renderDispatcherDashboard()}
+      <div class="divider"></div>
+      <h3>Recent Updates</h3>
+      ${renderActivity(activity)}
+    `;
+  }
+
   return `
-    <h2>Command Board</h2>
-    <p class="muted tight">${store.cellFeatures.length} grid squares, 0.5 km each. Grid updates sync across phones; each volunteer identity stays on their own device.</p>
-    <p class="sync-line ${store.sharedSyncStatus === "live" ? "live" : "offline"}">Shared sync: ${escapeHtml(store.sharedSyncStatus)}</p>
+    <h2>Search Status</h2>
     <div class="summary-grid">
       ${summaryItem(counts.open, "Open")}
       ${summaryItem(counts.searching, "Searching")}
       ${summaryItem(counts.done, "Complete")}
-      ${summaryItem(counts.backup + counts.emergency + counts.found, "Escalations")}
     </div>
-    <div class="metric-grid">
-      ${metricItem(`${analytics.coverage}%`, "Coverage")}
-      ${metricItem(String(counts.stale), "Stale released")}
-      ${metricItem(String(analytics.openIncidents), "Open incidents")}
-      ${metricItem(String(analytics.volunteersSearching), "Volunteers out")}
-    </div>
-
     ${renderMissingPersonSection()}
-    ${renderWhatsAppShare()}
-
-    <h3>Volunteer Identity</h3>
-    <form id="profileForm" class="profile-form">
-      <label>Name
-        <input id="profileName" autocomplete="name" value="${escapeAttr(state.profile.name)}" />
-      </label>
-      <div class="field-row">
-        <label>Phone
-          <input id="profileContact" autocomplete="tel" value="${escapeAttr(state.profile.contact)}" />
-        </label>
-        <label>Team
-          <input id="profileTeam" value="${escapeAttr(state.profile.team)}" />
-        </label>
-      </div>
-      <div class="button-row">
-        <button class="button full" type="submit">Save identity</button>
-      </div>
-    </form>
-
-    <div class="identity-card">
-      <span class="role-pill ${state.profile.phoneVerified ? "verified" : ""}">
-        ${state.profile.phoneVerified ? "Phone verified" : "Phone unverified"}
-      </span>
-      <span class="role-pill">${escapeHtml(state.profile.role)}</span>
-      <span class="small">Session ${shortId(session.id)}</span>
-    </div>
-
-    <div class="verification-row">
-      <button id="sendCodeBtn" class="button" type="button">Send demo code</button>
-      <label>Code
-        <input id="phoneCode" inputmode="numeric" autocomplete="one-time-code" />
-      </label>
-      <button id="verifyCodeBtn" class="button success" type="button">Verify</button>
-    </div>
-    ${
-      state.profile.verificationCode
-        ? `<p class="notice warning">Demo code: <strong>${escapeHtml(state.profile.verificationCode)}</strong>. Real SMS verification needs a backend.</p>`
-        : ""
-    }
-
-    ${state.profile.dispatcher ? renderDispatcherDashboard() : ""}
-
     <div class="divider"></div>
     <h3>Recent Updates</h3>
     ${renderActivity(activity)}
@@ -224,13 +199,6 @@ function bindCommandPanel() {
     _saveMissingPerson();
   });
   document.getElementById("mpPhotoInput")?.addEventListener("change", _handleMissingPersonPhoto);
-  document.getElementById("profileForm").addEventListener("submit", (e) => {
-    e.preventDefault();
-    _saveProfileFromCommand();
-  });
-  document.getElementById("sendCodeBtn").addEventListener("click", _sendVerificationCode);
-  document.getElementById("verifyCodeBtn").addEventListener("click", _verifyPhoneCode);
-
   document.getElementById("runStaleBtn")?.addEventListener("click", () => scanStaleCells({ manual: true }));
   document.getElementById("exportAuditBtn")?.addEventListener("click", exportAudit);
   document.getElementById("positionsKeyBtn")?.addEventListener("click", async () => {
@@ -552,55 +520,3 @@ function _compressPhoto(file, maxPx, quality) {
   });
 }
 
-function _saveProfileFromCommand() {
-  const previousContact = state.profile.contact;
-  const nextContact = document.getElementById("profileContact").value.trim();
-  state.profile.name = document.getElementById("profileName").value.trim();
-  state.profile.contact = nextContact;
-  state.profile.team = document.getElementById("profileTeam").value.trim();
-  state.profile.lastSeenAt = new Date().toISOString();
-  if (previousContact !== nextContact) {
-    state.profile.phoneVerified = false;
-    state.profile.verifiedAt = "";
-    state.profile.verificationCode = "";
-    state.profile.verificationSentAt = "";
-  }
-  addAudit("identity_updated", null, { phoneVerified: state.profile.phoneVerified });
-  saveState();
-  renderPanel();
-  showToast("Identity saved.");
-}
-
-function _sendVerificationCode() {
-  const phone = document.getElementById("profileContact").value.trim();
-  if (!phone) { showToast("Enter a phone number first."); return; }
-  state.profile.name = document.getElementById("profileName").value.trim();
-  state.profile.contact = phone;
-  state.profile.team = document.getElementById("profileTeam").value.trim();
-  state.profile.verificationCode = String(Math.floor(100000 + Math.random() * 900000));
-  state.profile.verificationSentAt = new Date().toISOString();
-  state.profile.phoneVerified = false;
-  state.profile.verifiedAt = "";
-  addAudit("phone_verification_requested", null, { phone: maskPhone(phone), mode: "demo_local_code" });
-  saveState();
-  renderPanel();
-  showToast("Demo code generated.");
-}
-
-function _verifyPhoneCode() {
-  const code = document.getElementById("phoneCode").value.trim();
-  if (!state.profile.verificationCode || code !== state.profile.verificationCode) {
-    addAudit("phone_verification_failed", null, { phone: maskPhone(state.profile.contact) });
-    saveState();
-    showToast("Verification code did not match.");
-    return;
-  }
-  state.profile.phoneVerified = true;
-  state.profile.verifiedAt = new Date().toISOString();
-  state.profile.verificationCode = "";
-  state.profile.verificationSentAt = "";
-  addAudit("phone_verified", null, { phone: maskPhone(state.profile.contact) });
-  saveState();
-  renderPanel();
-  showToast("Phone marked verified.");
-}

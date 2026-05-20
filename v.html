@@ -228,45 +228,21 @@
     });
   }
 
-  function buildExtendedCellFeatures(primaryFeatures) {
-    const extPolygon = turf.polygon([GRID_EXTENDED_BOUNDARY]);
-    const key = (lng, lat) => `${lng.toFixed(5)},${lat.toFixed(5)}`;
-    const seen = new Set();
-
-    primaryFeatures.forEach(f => {
-      const [w, s, e, n] = turf.bbox(f);
-      seen.add(key((w + e) / 2, (s + n) / 2));
+  function buildExtendedCellFeatures() {
+    const extBp = turf.polygon([GRID_EXTENDED_BOUNDARY]);
+    const primaryBp = turf.polygon([GRID_BOUNDARY]);
+    const grid = turf.squareGrid(turf.bbox(extBp), GRID_CELL_KM, { units: "kilometers", mask: extBp });
+    // Keep only cells whose centers fall outside the primary boundary.
+    const extOnly = grid.features.filter(f => {
+      const [lng, lat] = turf.centroid(f).geometry.coordinates;
+      try { return !turf.booleanPointInPolygon(turf.point([lng, lat]), primaryBp); } catch { return true; }
     });
-
-    const queue = [...primaryFeatures];
-    const newItems = [];
-
-    while (queue.length > 0) {
-      const cell = queue.shift();
-      const [w, s, e, n] = turf.bbox(cell);
-      const cw = e - w, ch = n - s;
-      const neighbours = [
-        [w, n, e, n + ch],
-        [w, s - ch, e, s],
-        [e, s, e + cw, n],
-        [w - cw, s, w, n],
-      ];
-      for (const [nw, ns, ne, nn] of neighbours) {
-        const cLng = (nw + ne) / 2, cLat = (ns + nn) / 2;
-        const k = key(cLng, cLat);
-        if (seen.has(k)) continue;
-        seen.add(k);
-        if (!Number.isFinite(cLng) || !Number.isFinite(cLat)) continue;
-        try { if (!turf.booleanPointInPolygon(turf.point([cLng, cLat]), extPolygon)) continue; } catch { continue; }
-        const newCell = turf.polygon([[[nw, ns], [ne, ns], [ne, nn], [nw, nn], [nw, ns]]]);
-        newCell.properties = {};
-        queue.push(newCell);
-        newItems.push({ feature: newCell, lng: cLng, lat: cLat });
-      }
-    }
-
+    const enriched = extOnly.map(f => {
+      const [lng, lat] = turf.centroid(f).geometry.coordinates;
+      return { f, lng, lat };
+    });
     const rows = [];
-    newItems.sort((a, b) => b.lat - a.lat || a.lng - b.lng).forEach(item => {
+    enriched.sort((a, b) => b.lat - a.lat || a.lng - b.lng).forEach(item => {
       const row = rows.find(r => Math.abs(r.lat - item.lat) < GRID_CELL_KM * 0.0048);
       if (row) { row.items.push(item); row.lat = row.items.reduce((t, c) => t + c.lat, 0) / row.items.length; }
       else rows.push({ lat: item.lat, items: [item] });
@@ -276,8 +252,8 @@
       row.items.sort((a, b) => a.lng - b.lng);
       return row.items.map((item, ci) => {
         const id = `E-${rowLabel(ri)}${String(ci + 1).padStart(2, "0")}`;
-        item.feature.properties = { id, center: [item.lng, item.lat] };
-        return item.feature;
+        item.f.properties = { id, center: [item.lng, item.lat] };
+        return item.f;
       });
     });
   }
@@ -303,17 +279,25 @@
     }
   }
 
-  function renderGrid(cellFeatures, cellStatuses, assignedCellId) {
+  function renderGrid(cellFeatures, cellStatuses, assignedCellId, assignedCellCoords) {
     const gridGroup = L.layerGroup().addTo(map);
     let assignedBounds = null;
+    let assignedLabel = assignedCellId;
 
     cellFeatures.forEach(feature => {
       const id = feature.properties.id;
       const isExtended = id.startsWith("E-");
       const status = cellStatuses?.[id]?.status || "open";
-      const isAssigned = id === assignedCellId;
       const s = STATUS_STYLE[status] || STATUS_STYLE.open;
       const latlngs = feature.geometry.coordinates[0].map(([lng, lat]) => [lat, lng]);
+
+      // Match by ID first; for E- cells also fall back to coordinate containment.
+      let isAssigned = id === assignedCellId;
+      if (!isAssigned && isExtended && assignedCellCoords) {
+        const [aLng, aLat] = assignedCellCoords;
+        isAssigned = L.latLngBounds(latlngs).contains([aLat, aLng]);
+        if (isAssigned) assignedLabel = id;
+      }
 
       let style;
       if (isAssigned) {
@@ -332,7 +316,7 @@
         L.marker([clat, clng], {
           icon: L.divIcon({
             className: "",
-            html: `<div style="background:#1d4ed8;color:#fff;font-size:12px;font-weight:800;padding:3px 8px;border-radius:6px;white-space:nowrap;box-shadow:0 2px 6px rgba(0,0,0,0.35);">Grid ${id} — Your area</div>`,
+            html: `<div style="background:#1d4ed8;color:#fff;font-size:12px;font-weight:800;padding:3px 8px;border-radius:6px;white-space:nowrap;box-shadow:0 2px 6px rgba(0,0,0,0.35);">Grid ${assignedLabel} — Your area</div>`,
             iconAnchor: [0, 0],
           }),
         }).addTo(gridGroup);
@@ -647,9 +631,9 @@
       // Build and render the full grid (primary + extended), with assigned cell highlighted
       try {
         const primaryFeatures = buildCellFeatures();
-        const extendedFeatures = buildExtendedCellFeatures(primaryFeatures);
+        const extendedFeatures = buildExtendedCellFeatures();
         const cellFeatures = [...primaryFeatures, ...extendedFeatures];
-        renderGrid(cellFeatures, cellStatuses, volunteer.assignedCell || null);
+        renderGrid(cellFeatures, cellStatuses, volunteer.assignedCell || null, volunteer.assignedCellCoords || null);
         let sc = 0, dc = 0;
         Object.values(cellStatuses).forEach(c => {
           if (c.status === "searching") sc++;

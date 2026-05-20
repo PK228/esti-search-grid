@@ -150,7 +150,8 @@ module.exports = async function handler(req, res) {
 
       const cellValue = String(assignedCell || "").trim().slice(0, 20);
       volunteers[volunteerId].assignedCell = cellValue || null;
-      volunteers[volunteerId].assignedCellCoords = cellValue ? (assignedCellCoords || null) : null;
+      volunteers[volunteerId].assignedCellCoords = cellValue ? (payload.assignedCellCoords || null) : null;
+      volunteers[volunteerId].assignedCellBounds = cellValue ? (payload.assignedCellBounds || null) : null;
       volunteers[volunteerId].status = cellValue ? "assigned" : "queued";
       volunteers[volunteerId].assignedAt = cellValue ? Date.now() : null;
 

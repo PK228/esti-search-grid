@@ -65,6 +65,13 @@ function volunteersKey(searchId) {
   return "esti:search:default:volunteers";
 }
 
+function stateKey(searchId) {
+  if (searchId && /^[a-zA-Z0-9_-]{1,64}$/.test(searchId)) {
+    return `esti:search:${searchId}:state`;
+  }
+  return "esti-search-grid:shared-state:v1";
+}
+
 function positionsKey(searchId) {
   if (searchId && /^[a-zA-Z0-9_-]{1,64}$/.test(searchId)) {
     return `esti:search:${searchId}:positions`;
@@ -114,6 +121,7 @@ module.exports = async function handler(req, res) {
           lastName: volunteer.lastName,
           assignedCell: volunteer.assignedCell,
           assignedCellCoords: volunteer.assignedCellCoords,
+          assignedCellBounds: volunteer.assignedCellBounds || null,
           status: volunteer.status,
           searchId: volunteer.searchId,
           dispatchPhone: process.env.DISPATCH_PHONE || "",
@@ -185,6 +193,81 @@ module.exports = async function handler(req, res) {
           await redisSet(vKey, volunteers);
         }
         json(res, 200, { ok: true });
+        return;
+      }
+
+      // POST /api/volunteer/backup — volunteer requests backup
+      if (urlPath.endsWith("/backup")) {
+        const vKey = volunteersKey(searchId);
+        const volunteers = await redisGet(vKey);
+        if (volunteers[volunteer.id]) {
+          volunteers[volunteer.id].status = "backup_needed";
+          volunteers[volunteer.id].backupRequestedAt = Date.now();
+          await redisSet(vKey, volunteers);
+        }
+        json(res, 200, { ok: true });
+        return;
+      }
+
+      // POST /api/volunteer/found — volunteer reports found missing person
+      if (urlPath.endsWith("/found")) {
+        const vKey = volunteersKey(searchId);
+        const volunteers = await redisGet(vKey);
+        if (volunteers[volunteer.id]) {
+          volunteers[volunteer.id].status = "found";
+          volunteers[volunteer.id].foundAt = Date.now();
+          await redisSet(vKey, volunteers);
+        }
+        json(res, 200, { ok: true });
+        return;
+      }
+
+      // POST /api/volunteer/note — volunteer sends a note to dispatch
+      if (urlPath.endsWith("/note")) {
+        const noteText = String(payload.note || "").trim().slice(0, 1000);
+        if (!noteText) { json(res, 400, { ok: false, error: "note required" }); return; }
+        const vKey = volunteersKey(searchId);
+        const volunteers = await redisGet(vKey);
+        if (volunteers[volunteer.id]) {
+          if (!Array.isArray(volunteers[volunteer.id].notes)) {
+            volunteers[volunteer.id].notes = [];
+          }
+          volunteers[volunteer.id].notes.push({ text: noteText, sentAt: Date.now() });
+          await redisSet(vKey, volunteers);
+        }
+        json(res, 200, { ok: true });
+        return;
+      }
+
+      // POST /api/volunteer/clue — volunteer reports a clue; added to shared state
+      if (urlPath.endsWith("/clue")) {
+        const description = String(payload.description || "").trim().slice(0, 400);
+        if (!description) { json(res, 400, { ok: false, error: "description required" }); return; }
+        const lat = Number(payload.lat);
+        const lng = Number(payload.lng);
+        const sKey = stateKey(searchId);
+        const currentState = await redisGet(sKey);
+        const clues = Array.isArray(currentState?.clues) ? currentState.clues : [];
+        const clueId = `vol-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+        clues.push({
+          id: clueId,
+          gridId: volunteer.assignedCell || null,
+          type: "other",
+          description,
+          lat: Number.isFinite(lat) ? lat : null,
+          lng: Number.isFinite(lng) ? lng : null,
+          photoData: "",
+          loggedBy: { name: `${volunteer.firstName} ${volunteer.lastName}`.trim(), userId: volunteer.id },
+          loggedAt: new Date().toISOString(),
+          resolved: false,
+          resolvedBy: "",
+          resolvedAt: "",
+        });
+        if (currentState && typeof currentState === "object") {
+          currentState.clues = clues.slice(-200);
+          await redisSet(sKey, currentState);
+        }
+        json(res, 200, { ok: true, clueId });
         return;
       }
     }

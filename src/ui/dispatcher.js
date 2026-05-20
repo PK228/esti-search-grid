@@ -83,16 +83,31 @@ function _renderVolunteerRow(v) {
   const status = escapeHtml(v.status || "queued");
   const cell = v.assignedCell ? escapeHtml(v.assignedCell) : null;
   const emailLink = v.email && v.trackingUrl && v.assignedCell ? buildEmailLink(v) : "";
-  const canAssign = v.status !== "completed";
+  const canAssign = v.status !== "completed" && v.status !== "found";
+
+  const latestNote = Array.isArray(v.notes) && v.notes.length
+    ? v.notes[v.notes.length - 1]
+    : null;
+  const noteHtml = latestNote
+    ? `<div class="vq-note">📝 ${escapeHtml(latestNote.text)}</div>`
+    : "";
+
+  const urgentBanner = v.status === "backup_needed"
+    ? `<div class="vq-urgent">🚨 Backup requested</div>`
+    : v.status === "found"
+    ? `<div class="vq-urgent vq-urgent-found">✅ Missing person found</div>`
+    : "";
 
   return `
     <li class="volunteer-queue-row" data-vol-id="${escapeAttr(v.id)}">
+      ${urgentBanner}
       <div class="vq-name">${name}</div>
       <div class="vq-meta">
         ${phone ? `<a href="tel:${escapeAttr(v.phone)}" class="vq-call">${phone}</a>` : ""}
         <span class="vq-status status-pill ${_statusClass(v.status)}">${status}</span>
         ${cell ? `<span class="vq-cell">Grid ${cell}</span>` : ""}
       </div>
+      ${noteHtml}
       <div class="vq-actions">
         ${canAssign ? `<button class="button small vq-assign-btn" data-vol-id="${escapeAttr(v.id)}" type="button">${cell ? "Change grid" : "Assign grid"}</button>` : ""}
         ${cell && canAssign ? `<button class="button small vq-remove-btn" data-vol-id="${escapeAttr(v.id)}" type="button">Remove</button>` : ""}
@@ -159,12 +174,24 @@ async function _submitAssign(volunteerId, cellId, container) {
   showToast(`Assigning ${cellId}…`);
   try {
     const searchParam = SEARCH_ID || "default";
+
+    // Resolve cell center coords and bbox from the live grid lookup.
+    const feature = store.cellLookup.get(cellId);
+    const center = feature?.properties?.center || null;
+    let assignedCellBounds = null;
+    if (feature && window.turf) {
+      const [w, s, e, n] = window.turf.bbox(feature);
+      assignedCellBounds = [[s, w], [n, e]]; // Leaflet [[sw], [ne]] format
+    }
+
     const res = await fetch(INTAKE_API, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         volunteerId,
         assignedCell: cellId,
+        assignedCellCoords: center,
+        assignedCellBounds,
         searchId: searchParam,
         dispatchKey: store.positionsKey,
       }),
@@ -222,6 +249,8 @@ function buildEmailLink(v) {
 }
 
 function _statusClass(status) {
+  if (status === "backup_needed") return "status-backup";
+  if (status === "found") return "status-found";
   if (status === "assigned") return "status-searching";
   if (status === "completed") return "status-done";
   return "status-open";

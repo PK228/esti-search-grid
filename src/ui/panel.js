@@ -82,7 +82,7 @@ function renderCommandPanel() {
     const analytics = getAnalytics(counts);
     return `
       <h2>Command Board</h2>
-      <p class="muted tight">${store.cellFeatures.length} grid squares, 0.5 km each. Grid updates sync across phones; each volunteer identity stays on their own device.</p>
+      <p class="muted tight">${store.cellFeatures.length} grid squares, 0.5 km each. Grid updates sync across phones.</p>
       <p class="sync-line ${store.sharedSyncStatus === "live" ? "live" : "offline"}">Shared sync: ${escapeHtml(store.sharedSyncStatus)}</p>
       <div class="summary-grid">
         ${summaryItem(counts.open, "Open")}
@@ -113,9 +113,6 @@ function renderCommandPanel() {
       ${summaryItem(counts.done, "Complete")}
     </div>
     ${renderMissingPersonSection()}
-    <div class="divider"></div>
-    <h3>Recent Updates</h3>
-    ${renderActivity(activity)}
   `;
 }
 

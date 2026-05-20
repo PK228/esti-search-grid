@@ -64,6 +64,10 @@ export const store = {
   positionsKey: localStorage.getItem(POSITIONS_KEY_STORE) || "",
   positionSyncTimer: null,
 
+  // Cell picking mode — dispatcher clicks a grid cell to assign it to a volunteer
+  assigningVolunteerId: null,
+  assigningVolunteerName: "",
+
   // Timers
   staleTimer: null,
 

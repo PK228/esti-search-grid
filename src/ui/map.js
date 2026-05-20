@@ -13,6 +13,38 @@ let _tracePolyline = null;
 let _traceMarkers = [];
 let _traceControl = null;
 
+// ---- Cell picking mode (dispatcher assigns a cell by tapping the map) ----
+let _pickControl = null;
+
+export function enterCellPickingMode(volunteerName) {
+  if (_pickControl) { _pickControl.remove(); _pickControl = null; }
+  store.map.getContainer().style.cursor = "crosshair";
+
+  const PickCtrl = L.Control.extend({
+    onAdd() {
+      const div = L.DomUtil.create("div", "leaflet-pick-control");
+      div.innerHTML = `<span class="pick-label">Tap a cell for <strong>${escapeHtml(volunteerName)}</strong></span>
+        <button class="pick-btn" type="button">Cancel</button>`;
+      L.DomEvent.on(div.querySelector(".pick-btn"), "click", (e) => {
+        L.DomEvent.stopPropagation(e);
+        document.dispatchEvent(new CustomEvent("esti:cell-pick-cancelled"));
+      });
+      return div;
+    },
+    onRemove() {},
+  });
+  _pickControl = new PickCtrl({ position: "topright" });
+  _pickControl.addTo(store.map);
+  store.map.getContainer().scrollIntoView({ behavior: "smooth", block: "center" });
+}
+
+export function exitCellPickingMode() {
+  store.assigningVolunteerId = null;
+  store.assigningVolunteerName = "";
+  store.map.getContainer().style.cursor = "";
+  if (_pickControl) { _pickControl.remove(); _pickControl = null; }
+}
+
 export function startTraceBoundary() {
   store.traceBoundaryMode = true;
   _traceVertices = [];
@@ -173,6 +205,10 @@ export function setupMap(onCellClick) {
         layer.on("click", (event) => {
           if (store.placingLastSeen) { placeLastSeen(event.latlng); return; }
           if (store.traceBoundaryMode) { _addTraceVertex(event.latlng); return; }
+          if (store.assigningVolunteerId) {
+            document.dispatchEvent(new CustomEvent("esti:cell-picked", { detail: feature.properties.id }));
+            return;
+          }
           onCellClick(feature.properties.id);
         });
         layer.on("mouseover", () => layer.setStyle({ weight: 3 }));

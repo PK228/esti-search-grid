@@ -4,7 +4,7 @@ import { store } from "../core/store.js";
 import { addAudit } from "../core/audit.js";
 import { getOpenIncidents } from "../grid/incidents.js";
 import { getCellsByStatus } from "../grid/cells.js";
-import { renderLastSeenControl } from "./map.js";
+import { renderLastSeenControl, enterCellPickingMode, exitCellPickingMode } from "./map.js";
 import { escapeHtml, escapeAttr, formatTime } from "../utils/format.js";
 import { showToast } from "../utils/toast.js";
 
@@ -108,44 +108,51 @@ function _bindQueueActions(container) {
 }
 
 function _showAssignForm(volunteerId, container) {
-  // Remove any open assign form first.
-  container.querySelector(".vq-assign-form")?.closest(".vq-inline-form-row")?.remove();
-
-  const row = container.querySelector(`[data-vol-id="${volunteerId}"]`);
-  if (!row) return;
+  // Cancel any existing pick in progress.
+  _cancelPickMode();
 
   const v = _cachedVolunteers.find((x) => x.id === volunteerId);
-  const currentCell = v?.assignedCell || "";
+  if (!v) return;
 
-  const formRow = document.createElement("li");
-  formRow.className = "vq-inline-form-row";
-  formRow.innerHTML = `
-    <form class="vq-assign-form">
-      <label class="vq-assign-label">Grid cell for ${escapeHtml(v ? `${v.firstName} ${v.lastName}` : "volunteer")}</label>
-      <div class="vq-assign-inputs">
-        <input class="vq-grid-input" type="text" placeholder="e.g. J10" value="${escapeAttr(currentCell)}" autocomplete="off" autocapitalize="characters" maxlength="10" />
-        <button type="submit" class="button primary small">Save</button>
-        <button type="button" class="button small vq-cancel-btn">Cancel</button>
-      </div>
-    </form>
-  `;
+  const name = `${v.firstName} ${v.lastName}`;
+  store.assigningVolunteerId = volunteerId;
+  store.assigningVolunteerName = name;
+  enterCellPickingMode(name);
 
-  row.after(formRow);
-  formRow.querySelector(".vq-grid-input").focus();
+  // Mark the row so the user sees which volunteer is being assigned.
+  const row = container.querySelector(`[data-vol-id="${volunteerId}"]`);
+  const pill = document.createElement("span");
+  pill.id = "vq-picking-pill";
+  pill.className = "vq-picking-pill";
+  pill.textContent = "Tap a cell on the map…";
+  row?.querySelector(".vq-actions")?.prepend(pill);
 
-  formRow.querySelector(".vq-cancel-btn").addEventListener("click", () => formRow.remove());
-  formRow.querySelector(".vq-assign-form").addEventListener("submit", async (e) => {
-    e.preventDefault();
-    const cellId = formRow.querySelector(".vq-grid-input").value.trim().toUpperCase();
-    if (!cellId) { showToast("Enter a grid cell ID."); return; }
-    await _submitAssign(volunteerId, cellId, formRow, container);
-  });
+  function onPicked(e) {
+    cleanup();
+    _submitAssign(volunteerId, String(e.detail).toUpperCase(), container);
+  }
+  function onCancelled() { cleanup(); }
+
+  function cleanup() {
+    document.removeEventListener("esti:cell-picked", onPicked);
+    document.removeEventListener("esti:cell-pick-cancelled", onCancelled);
+    exitCellPickingMode();
+    document.getElementById("vq-picking-pill")?.remove();
+  }
+
+  document.addEventListener("esti:cell-picked", onPicked, { once: true });
+  document.addEventListener("esti:cell-pick-cancelled", onCancelled, { once: true });
 }
 
-async function _submitAssign(volunteerId, cellId, formRow, container) {
-  const submitBtn = formRow.querySelector("[type=submit]");
-  submitBtn.disabled = true;
-  submitBtn.textContent = "Saving…";
+function _cancelPickMode() {
+  // If a pick was already in progress, clean up before starting a new one.
+  if (store.assigningVolunteerId) {
+    document.dispatchEvent(new CustomEvent("esti:cell-pick-cancelled"));
+  }
+}
+
+async function _submitAssign(volunteerId, cellId, container) {
+  showToast(`Assigning ${cellId}…`);
   try {
     const searchParam = SEARCH_ID || "default";
     const res = await fetch(INTAKE_API, {
@@ -160,14 +167,10 @@ async function _submitAssign(volunteerId, cellId, formRow, container) {
     });
     const data = await res.json();
     if (!res.ok || !data.ok) throw new Error(data.error || "Save failed");
-    formRow.remove();
     showToast(`Assigned ${cellId} — tap "Send SMS" to notify.`);
-    // Force refresh so the row updates with the new cell + SMS button.
     _lastQueueFetch = 0;
     await loadVolunteerQueue(true);
   } catch (err) {
-    submitBtn.disabled = false;
-    submitBtn.textContent = "Save";
     showToast(err.message || "Could not save assignment.");
   }
 }

@@ -1,4 +1,4 @@
-import { DISPATCHER_PIN, SHARED_API_BASE, SEARCH_ID } from "../core/constants.js";
+import { DISPATCHER_PIN, SHARED_API_BASE, SEARCH_ID, POSITIONS_KEY_STORE } from "../core/constants.js";
 import { state, saveState } from "../core/state.js";
 import { store } from "../core/store.js";
 import { addAudit } from "../core/audit.js";
@@ -82,7 +82,7 @@ function _renderVolunteerRow(v) {
   const phone = escapeHtml(v.phone || "");
   const status = escapeHtml(v.status || "queued");
   const cell = v.assignedCell ? escapeHtml(v.assignedCell) : null;
-  const smsLink = v.phone && v.trackingUrl && v.assignedCell ? buildSmsLink(v) : "";
+  const emailLink = v.email && v.trackingUrl && v.assignedCell ? buildEmailLink(v) : "";
   const canAssign = v.status !== "completed";
 
   return `
@@ -95,7 +95,8 @@ function _renderVolunteerRow(v) {
       </div>
       <div class="vq-actions">
         ${canAssign ? `<button class="button small vq-assign-btn" data-vol-id="${escapeAttr(v.id)}" type="button">${cell ? "Change grid" : "Assign grid"}</button>` : ""}
-        ${smsLink ? `<a href="${escapeAttr(smsLink)}" class="button primary small vq-send">Send SMS</a>` : ""}
+        ${cell && canAssign ? `<button class="button small vq-remove-btn" data-vol-id="${escapeAttr(v.id)}" type="button">Remove</button>` : ""}
+        ${emailLink ? `<a href="${escapeAttr(emailLink)}" class="button primary small vq-send">Send email</a>` : ""}
       </div>
     </li>
   `;
@@ -104,6 +105,9 @@ function _renderVolunteerRow(v) {
 function _bindQueueActions(container) {
   container.querySelectorAll(".vq-assign-btn").forEach((btn) => {
     btn.addEventListener("click", () => _showAssignForm(btn.dataset.volId, container));
+  });
+  container.querySelectorAll(".vq-remove-btn").forEach((btn) => {
+    btn.addEventListener("click", () => _removeAssignment(btn.dataset.volId, container));
   });
 }
 
@@ -167,7 +171,7 @@ async function _submitAssign(volunteerId, cellId, container) {
     });
     const data = await res.json();
     if (!res.ok || !data.ok) throw new Error(data.error || "Save failed");
-    showToast(`Assigned ${cellId} — tap "Send SMS" to notify.`);
+    showToast(`Assigned ${cellId} — tap "Send email" to notify.`);
     _lastQueueFetch = 0;
     await loadVolunteerQueue(true);
   } catch (err) {
@@ -175,17 +179,46 @@ async function _submitAssign(volunteerId, cellId, container) {
   }
 }
 
-function buildSmsLink(v) {
+async function _removeAssignment(volunteerId, container) {
+  showToast("Removing assignment…");
+  try {
+    const searchParam = SEARCH_ID || "default";
+    const res = await fetch(INTAKE_API, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        volunteerId,
+        assignedCell: "",
+        searchId: searchParam,
+        dispatchKey: store.positionsKey,
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok || !data.ok) throw new Error(data.error || "Remove failed");
+    showToast("Assignment removed.");
+    _lastQueueFetch = 0;
+    await loadVolunteerQueue(true);
+  } catch (err) {
+    showToast(err.message || "Could not remove assignment.");
+  }
+}
+
+function buildEmailLink(v) {
   const name = `${v.firstName} ${v.lastName}`;
   const mapsUrl = v.assignedCellCoords
     ? `https://maps.google.com/?q=${v.assignedCellCoords[1]},${v.assignedCellCoords[0]}`
     : "";
+  const subject = `Search assignment — Grid ${v.assignedCell}`;
   const body = [
-    `Hi ${name}, you've been assigned to grid ${v.assignedCell} for the search.`,
+    `Hi ${name},`,
+    ``,
+    `You've been assigned to grid ${v.assignedCell} for the search.`,
     mapsUrl ? `Navigate here: ${mapsUrl}` : "",
-    `Open your tracking page (keep this page open during your search): ${v.trackingUrl}`,
-  ].filter(Boolean).join("\n");
-  return `sms:${v.phone.replace(/[^\d+]/g, "")}?body=${encodeURIComponent(body)}`;
+    ``,
+    `Open your tracking page and keep it open during your search:`,
+    v.trackingUrl,
+  ].filter((l) => l !== undefined).join("\n");
+  return `mailto:${encodeURIComponent(v.email)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
 }
 
 function _statusClass(status) {
@@ -221,7 +254,7 @@ export function bindDispatcherLogin() {
   requestAnimationFrame(() => document.getElementById("dispatcherPin")?.focus());
 }
 
-export function enterDispatcherMode(event) {
+export async function enterDispatcherMode(event) {
   event?.preventDefault();
   const pinInput = document.getElementById("dispatcherPin");
   const pin = pinInput.value.trim();
@@ -234,6 +267,21 @@ export function enterDispatcherMode(event) {
     pinInput.focus();
     return;
   }
+
+  // Best-effort: fetch positions key from server so volunteer map unlocks automatically.
+  try {
+    const res = await fetch(`${window.location.origin}/api/dispatcher-auth`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pin }),
+    });
+    const data = await res.json();
+    if (data.ok && data.positionsKey) {
+      store.positionsKey = data.positionsKey;
+      localStorage.setItem(POSITIONS_KEY_STORE, data.positionsKey);
+    }
+  } catch { /* silent — positions key can be entered manually */ }
+
   store.dispatcherLoginOpen = false;
   state.profile.dispatcher = true;
   state.profile.role = "dispatcher";

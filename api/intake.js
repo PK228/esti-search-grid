@@ -1,7 +1,5 @@
 const crypto = require("crypto");
 
-const MAX_VOLUNTEERS = 500;
-
 function volunteersKey(searchId) {
   if (searchId && /^[a-zA-Z0-9_-]{1,64}$/.test(searchId)) {
     return `esti:search:${searchId}:volunteers`;
@@ -113,12 +111,7 @@ module.exports = async function handler(req, res) {
         searchId,
       };
 
-      const entries = Object.entries(volunteers);
-      const capped = entries.length > MAX_VOLUNTEERS
-        ? Object.fromEntries(entries.slice(-MAX_VOLUNTEERS))
-        : volunteers;
-
-      await redisSet(key, capped);
+      await redisSet(key, volunteers);
       json(res, 200, { ok: true, volunteerId, token: rawToken, trackingUrl, searchId });
       return;
     }
@@ -155,10 +148,11 @@ module.exports = async function handler(req, res) {
       const volunteers = await redisGet(key);
       if (!volunteers[volunteerId]) { json(res, 404, { ok: false, error: "Volunteer not found" }); return; }
 
-      volunteers[volunteerId].assignedCell = String(assignedCell || "").slice(0, 20);
-      volunteers[volunteerId].assignedCellCoords = assignedCellCoords || null;
-      volunteers[volunteerId].status = "assigned";
-      volunteers[volunteerId].assignedAt = Date.now();
+      const cellValue = String(assignedCell || "").trim().slice(0, 20);
+      volunteers[volunteerId].assignedCell = cellValue || null;
+      volunteers[volunteerId].assignedCellCoords = cellValue ? (assignedCellCoords || null) : null;
+      volunteers[volunteerId].status = cellValue ? "assigned" : "queued";
+      volunteers[volunteerId].assignedAt = cellValue ? Date.now() : null;
 
       await redisSet(key, volunteers);
       const { tokenHash: _t, ...safe } = volunteers[volunteerId];

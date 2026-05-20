@@ -2,7 +2,7 @@ import { state, ensureIdentity, saveState } from "./core/state.js";
 import { store } from "./core/store.js";
 import { startSharedSync } from "./core/sync.js";
 import { startPositionSync } from "./core/positions.js";
-import { HEARTBEAT_SCAN_MS } from "./core/constants.js";
+import { HEARTBEAT_SCAN_MS, DISPATCHER_PIN } from "./core/constants.js";
 import { addAudit } from "./core/audit.js";
 import { buildGrid, buildExtendedGrid } from "./grid/builder.js";
 import { scanStaleCells } from "./grid/cells.js";
@@ -28,7 +28,7 @@ function init() {
   }
 
   ensureIdentity();
-  _tryDispatcherAutoLogin();
+  _initFromUrl();
   buildGrid();
   buildExtendedGrid();
   scanStaleCells({ silent: true });
@@ -40,6 +40,7 @@ function init() {
   startSharedSync();
   startPositionSync();
   store.staleTimer = window.setInterval(() => scanStaleCells(), HEARTBEAT_SCAN_MS);
+  window.addEventListener("popstate", _onPopState);
 
   // ---- Event bus ----
   // Modules dispatch custom events instead of calling renderPanel() directly,
@@ -71,6 +72,7 @@ function init() {
   }
 
   document.addEventListener("esti:dispatcher-mode-changed", () => {
+    _syncUrlToDispatcherState();
     _refreshModeButtons();
     renderPanel();
     if (state.profile.dispatcher) {
@@ -126,8 +128,9 @@ function _refreshModeButtons() {
   const isDispatcher = state.profile.dispatcher || store.dispatcherLoginOpen;
 
   // Volunteer-only view: just Locate Me + POIs.
-  // Dispatcher mode unlocks the full toolbar.
-  const dispatcherOnlyIds = ["areaBtn", "heatBtn", "hastyBtn", "zonesBtn", "dispatcherBtn", "traceBtn", "exportBtn", "importBtn"];
+  // Dispatcher mode unlocks the full toolbar. dispatcherBtn stays visible always
+  // so non-dispatchers can navigate to /dispatch.
+  const dispatcherOnlyIds = ["areaBtn", "heatBtn", "hastyBtn", "zonesBtn", "traceBtn", "exportBtn", "importBtn"];
   dispatcherOnlyIds.forEach((id) => {
     const el = document.getElementById(id);
     if (el) el.hidden = !isDispatcher;
@@ -194,21 +197,56 @@ function _panelInputFocused() {
   return document.getElementById("panel")?.contains(active) ?? false;
 }
 
-function _tryDispatcherAutoLogin() {
-  const flag = localStorage.getItem("esti-dispatcher-autologin");
-  const pin  = localStorage.getItem("esti-dispatcher-pin-entry");
-  if (flag !== "1" || !pin) return;
-  localStorage.removeItem("esti-dispatcher-autologin");
-  localStorage.removeItem("esti-dispatcher-pin-entry");
-  // Lazy import to avoid circular dep at module load time.
-  import("./ui/dispatcher.js").then(({ enterDispatcherMode: _enter }) => {
-    // Simulate the pin being typed into the hidden input.
-    const dummy = document.createElement("input");
-    dummy.id = "dispatcherPin";
-    dummy.value = pin;
-    document.body.appendChild(dummy);
-    try { _enter(); } finally { dummy.remove(); }
-  }).catch(() => {});
+function _initFromUrl() {
+  if (window.location.pathname.startsWith("/dispatch")) {
+    store.activeCellId = null;
+
+    // Auto-login from the standalone dispatch.html login page.
+    const autoFlag = localStorage.getItem("esti-dispatcher-autologin");
+    const savedPin = localStorage.getItem("esti-dispatcher-pin-entry");
+    if (autoFlag === "1" && savedPin && savedPin === DISPATCHER_PIN) {
+      localStorage.removeItem("esti-dispatcher-autologin");
+      localStorage.removeItem("esti-dispatcher-pin-entry");
+      state.profile.dispatcher = true;
+      state.profile.role = "dispatcher";
+      addAudit("dispatcher_mode_enabled", null, {});
+      saveState();
+    } else if (!state.profile.dispatcher) {
+      store.dispatcherLoginOpen = true;
+    }
+  } else if (state.profile.dispatcher) {
+    // Already logged in as dispatcher but URL didn't say /dispatch — sync it.
+    history.replaceState({}, "", "/dispatch");
+  }
+}
+
+function _syncUrlToDispatcherState() {
+  const onDispatch = window.location.pathname.startsWith("/dispatch");
+  const wantsDispatch = state.profile.dispatcher || store.dispatcherLoginOpen;
+  if (wantsDispatch && !onDispatch) {
+    history.pushState({}, "", "/dispatch");
+  } else if (!wantsDispatch && onDispatch) {
+    history.pushState({}, "", "/");
+  }
+}
+
+function _onPopState() {
+  const onDispatch = window.location.pathname.startsWith("/dispatch");
+  if (!onDispatch) {
+    if (state.profile.dispatcher) {
+      state.profile.dispatcher = false;
+      state.profile.role = "volunteer";
+      addAudit("dispatcher_mode_exited", null, {});
+      saveState();
+    }
+    store.dispatcherLoginOpen = false;
+  } else if (!state.profile.dispatcher) {
+    store.dispatcherLoginOpen = true;
+    store.activeCellId = null;
+  }
+  _refreshModeButtons();
+  refreshGrid();
+  renderPanel();
 }
 
 function _toggleDispatcherMode() {
@@ -218,6 +256,7 @@ function _toggleDispatcherMode() {
     store.dispatcherLoginOpen = false;
     addAudit("dispatcher_mode_exited", null, {});
     saveState();
+    _syncUrlToDispatcherState();
     _refreshModeButtons();
     renderPanel();
     showToast("Dispatcher mode off.");
@@ -225,6 +264,7 @@ function _toggleDispatcherMode() {
   }
   store.dispatcherLoginOpen = !store.dispatcherLoginOpen;
   if (store.dispatcherLoginOpen) store.activeCellId = null;
+  _syncUrlToDispatcherState();
   _refreshModeButtons();
   refreshGrid();
   renderPanel();

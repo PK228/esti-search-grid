@@ -135,6 +135,7 @@ function init() {
   }
 
   ensureIdentity();
+  _initFromUrl();
   buildGrid();
   scanStaleCells({ silent: true });
   setupMap();
@@ -145,6 +146,7 @@ function init() {
   startSharedSync();
   startPositionSync();
   staleTimer = window.setInterval(() => scanStaleCells(), HEARTBEAT_SCAN_MS);
+  window.addEventListener("popstate", _onPopState);
 }
 
 function showFatal() {
@@ -215,8 +217,6 @@ function defaultProfile() {
     role: "volunteer",
     dispatcher: false,
     phoneVerified: false,
-    verificationCode: "",
-    verificationSentAt: "",
     verifiedAt: "",
     createdAt: "",
     lastSeenAt: "",
@@ -644,6 +644,46 @@ function toggleHeatMode() {
   showToast(heatMode ? "Heat map shows audit activity." : "Status colors restored.");
 }
 
+function _initFromUrl() {
+  if (window.location.pathname.startsWith("/dispatch")) {
+    activeCellId = null;
+    if (!state.profile.dispatcher) {
+      dispatcherLoginOpen = true;
+    }
+  } else if (state.profile.dispatcher) {
+    history.replaceState({}, "", "/dispatch");
+  }
+}
+
+function _syncUrlToDispatcherState() {
+  const onDispatch = window.location.pathname.startsWith("/dispatch");
+  const wantsDispatch = state.profile.dispatcher || dispatcherLoginOpen;
+  if (wantsDispatch && !onDispatch) {
+    history.pushState({}, "", "/dispatch");
+  } else if (!wantsDispatch && onDispatch) {
+    history.pushState({}, "", "/");
+  }
+}
+
+function _onPopState() {
+  const onDispatch = window.location.pathname.startsWith("/dispatch");
+  if (!onDispatch) {
+    if (state.profile.dispatcher) {
+      state.profile.dispatcher = false;
+      state.profile.role = "volunteer";
+      addAudit("dispatcher_mode_exited", null, {});
+      saveState();
+    }
+    dispatcherLoginOpen = false;
+  } else if (!state.profile.dispatcher) {
+    dispatcherLoginOpen = true;
+    activeCellId = null;
+  }
+  refreshModeButtons();
+  refreshGrid();
+  renderPanel();
+}
+
 function toggleDispatcherMode() {
   if (state.profile.dispatcher) {
     state.profile.dispatcher = false;
@@ -651,6 +691,7 @@ function toggleDispatcherMode() {
     dispatcherLoginOpen = false;
     addAudit("dispatcher_mode_exited", null, {});
     saveState();
+    _syncUrlToDispatcherState();
     refreshModeButtons();
     renderPanel();
     showToast("Dispatcher mode off.");
@@ -661,6 +702,7 @@ function toggleDispatcherMode() {
   if (dispatcherLoginOpen) {
     activeCellId = null;
   }
+  _syncUrlToDispatcherState();
   refreshModeButtons();
   refreshGrid();
   renderPanel();
@@ -695,7 +737,7 @@ function renderCommandPanel() {
   const activity = getRecentActivity();
   return `
     <h2>Command Board</h2>
-    <p class="muted tight">${cellFeatures.length} grid squares, ${GRID_CELL_KM} km each. Grid updates sync across phones; each volunteer identity stays on their own device.</p>
+    <p class="muted tight">${cellFeatures.length} grid squares, ${GRID_CELL_KM} km each. Grid updates sync across phones.</p>
     <p class="sync-line ${sharedSyncStatus === "live" ? "live" : "offline"}">Shared sync: ${escapeHtml(sharedSyncStatus)}</p>
     <div class="summary-grid">
       ${summaryItem(counts.open, "Open")}
@@ -710,47 +752,6 @@ function renderCommandPanel() {
       ${metricItem(analytics.openIncidents, "Open incidents")}
       ${metricItem(analytics.volunteersSearching, "Volunteers out")}
     </div>
-
-    <h3>Volunteer Identity</h3>
-    <form id="profileForm" class="profile-form">
-      <label>Name
-        <input id="profileName" autocomplete="name" value="${escapeAttr(state.profile.name)}" />
-      </label>
-      <div class="field-row">
-        <label>Phone
-          <input id="profileContact" autocomplete="tel" value="${escapeAttr(state.profile.contact)}" />
-        </label>
-        <label>Team
-          <input id="profileTeam" value="${escapeAttr(state.profile.team)}" />
-        </label>
-      </div>
-      <div class="button-row">
-        <button class="button full" type="submit">Save identity</button>
-      </div>
-    </form>
-
-    <div class="identity-card">
-      <span class="role-pill ${state.profile.phoneVerified ? "verified" : ""}">
-        ${state.profile.phoneVerified ? "Phone verified" : "Phone unverified"}
-      </span>
-      <span class="role-pill">${escapeHtml(state.profile.role)}</span>
-      <span class="small">Session ${shortId(session.id)}</span>
-    </div>
-
-    <div class="verification-row">
-      <button id="sendCodeBtn" class="button" type="button">Send demo code</button>
-      <label>Code
-        <input id="phoneCode" inputmode="numeric" autocomplete="one-time-code" />
-      </label>
-      <button id="verifyCodeBtn" class="button success" type="button">Verify</button>
-    </div>
-    ${
-      state.profile.verificationCode
-        ? `<p class="notice warning">Demo code: <strong>${escapeHtml(
-            state.profile.verificationCode,
-          )}</strong>. Real SMS verification needs a backend.</p>`
-        : ""
-    }
 
     ${state.profile.dispatcher ? renderDispatcherDashboard() : ""}
 
@@ -784,6 +785,7 @@ function bindDispatcherLogin() {
     .addEventListener("submit", enterDispatcherMode);
   document.getElementById("dispatcherCancelBtn").addEventListener("click", () => {
     dispatcherLoginOpen = false;
+    _syncUrlToDispatcherState();
     refreshModeButtons();
     renderPanel();
   });
@@ -920,13 +922,6 @@ function renderCellPanel(id) {
 }
 
 function bindCommandPanel() {
-  document.getElementById("profileForm").addEventListener("submit", (event) => {
-    event.preventDefault();
-    saveProfileFromCommand();
-  });
-  document.getElementById("sendCodeBtn").addEventListener("click", sendVerificationCode);
-  document.getElementById("verifyCodeBtn").addEventListener("click", verifyPhoneCode);
-
   const runStaleBtn = document.getElementById("runStaleBtn");
   if (runStaleBtn) {
     runStaleBtn.addEventListener("click", () => scanStaleCells({ manual: true }));
@@ -967,7 +962,7 @@ function bindCommandPanel() {
   });
 }
 
-function enterDispatcherMode(event) {
+async function enterDispatcherMode(event) {
   event?.preventDefault();
   const pinInput = document.getElementById("dispatcherPin");
   const pin = pinInput.value.trim();
@@ -983,6 +978,20 @@ function enterDispatcherMode(event) {
     pinInput.focus();
     return;
   }
+
+  // Best-effort: fetch positions key from server so volunteer map unlocks automatically.
+  try {
+    const res = await fetch(`${window.location.origin}/api/dispatcher-auth`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pin }),
+    });
+    const data = await res.json();
+    if (data.ok && data.positionsKey) {
+      positionsKey = data.positionsKey;
+      localStorage.setItem(POSITIONS_KEY_STORE, data.positionsKey);
+    }
+  } catch { /* silent — positions key can be entered manually */ }
 
   dispatcherLoginOpen = false;
   state.profile.dispatcher = true;
@@ -1026,28 +1035,6 @@ function bindCellPanel(id) {
   }
 }
 
-function saveProfileFromCommand() {
-  const previousContact = state.profile.contact;
-  const nextContact = document.getElementById("profileContact").value.trim();
-  state.profile.name = document.getElementById("profileName").value.trim();
-  state.profile.contact = nextContact;
-  state.profile.team = document.getElementById("profileTeam").value.trim();
-  state.profile.lastSeenAt = new Date().toISOString();
-
-  if (previousContact !== nextContact) {
-    state.profile.phoneVerified = false;
-    state.profile.verifiedAt = "";
-    state.profile.verificationCode = "";
-    state.profile.verificationSentAt = "";
-  }
-
-  addAudit("identity_updated", null, {
-    phoneVerified: state.profile.phoneVerified,
-  });
-  saveState();
-  renderPanel();
-  showToast("Identity saved.");
-}
 
 function saveProfileFromCellForm() {
   const previousContact = state.profile.contact;
@@ -1063,58 +1050,11 @@ function saveProfileFromCellForm() {
   if (previousContact !== contact) {
     state.profile.phoneVerified = false;
     state.profile.verifiedAt = "";
-    state.profile.verificationCode = "";
-    state.profile.verificationSentAt = "";
   }
 
   return { name, contact, team };
 }
 
-function sendVerificationCode() {
-  const phone = document.getElementById("profileContact").value.trim();
-  if (!phone) {
-    showToast("Enter a phone number first.");
-    return;
-  }
-
-  state.profile.name = document.getElementById("profileName").value.trim();
-  state.profile.contact = phone;
-  state.profile.team = document.getElementById("profileTeam").value.trim();
-  state.profile.verificationCode = String(Math.floor(100000 + Math.random() * 900000));
-  state.profile.verificationSentAt = new Date().toISOString();
-  state.profile.phoneVerified = false;
-  state.profile.verifiedAt = "";
-  addAudit("phone_verification_requested", null, {
-    phone: maskPhone(phone),
-    mode: "demo_local_code",
-  });
-  saveState();
-  renderPanel();
-  showToast("Demo code generated.");
-}
-
-function verifyPhoneCode() {
-  const code = document.getElementById("phoneCode").value.trim();
-  if (!state.profile.verificationCode || code !== state.profile.verificationCode) {
-    addAudit("phone_verification_failed", null, {
-      phone: maskPhone(state.profile.contact),
-    });
-    saveState();
-    showToast("Verification code did not match.");
-    return;
-  }
-
-  state.profile.phoneVerified = true;
-  state.profile.verifiedAt = new Date().toISOString();
-  state.profile.verificationCode = "";
-  state.profile.verificationSentAt = "";
-  addAudit("phone_verified", null, {
-    phone: maskPhone(state.profile.contact),
-  });
-  saveState();
-  renderPanel();
-  showToast("Phone marked verified.");
-}
 
 function updateCell(id, status) {
   const existing = state.cells[id] || {};

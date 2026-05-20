@@ -151,7 +151,7 @@
     localStorage.setItem("esti-dispatcher-pin-entry", pin);
 
     const qs = searchId ? `?s=${encodeURIComponent(searchId)}` : "";
-    setTimeout(() => { window.location.href = `${window.location.origin}/${qs}`; }, 300);
+    setTimeout(() => { window.location.href = `${window.location.origin}/dispatch${qs}`; }, 300);
   });
 })();
 </script>

@@ -10,6 +10,10 @@ import { showToast } from "../utils/toast.js";
 
 const INTAKE_API = `${SHARED_API_BASE}/api/intake`;
 
+// Module-level cache — survives panel re-renders so there's no flicker.
+let _cachedVolunteers = [];
+let _lastQueueFetch = 0;
+
 export function renderDispatcherDashboard() {
   const staleCells = getCellsByStatus("stale");
   const activeCells = getCellsByStatus("searching");
@@ -27,7 +31,7 @@ export function renderDispatcherDashboard() {
         <button id="exportAuditBtn" class="button" type="button">Export audit</button>
       </div>
       <h3>Volunteer Queue</h3>
-      <div id="volunteerQueue"><p class="muted">Enter location key above to load volunteer queue.</p></div>
+      <div id="volunteerQueue">${_renderQueueContents()}</div>
       <div class="dashboard-strip">
         ${dashboardList("Active", activeCells)}
         ${dashboardList("Stale", staleCells)}
@@ -40,53 +44,132 @@ export function renderDispatcherDashboard() {
   `;
 }
 
-export async function loadVolunteerQueue() {
+function _renderQueueContents() {
+  if (!store.positionsKey) return '<p class="muted">Enter location key above to load volunteer queue.</p>';
+  if (!_cachedVolunteers.length) return '<p class="muted">No volunteers registered yet.</p>';
+  return `<ul class="volunteer-queue-list">${_cachedVolunteers.map(_renderVolunteerRow).join("")}</ul>`;
+}
+
+// Called by panel.js after bindCommandPanel so queue actions work immediately.
+export function bindVolunteerQueueActions() {
   const container = document.getElementById("volunteerQueue");
-  if (!container || !store.positionsKey) return;
+  if (container) _bindQueueActions(container);
+}
+
+export async function loadVolunteerQueue(force = false) {
+  const container = document.getElementById("volunteerQueue");
+  if (!store.positionsKey) return;
+  const now = Date.now();
+  if (!force && now - _lastQueueFetch < 8000) return;
+  _lastQueueFetch = now;
   try {
     const searchParam = SEARCH_ID ? `?s=${encodeURIComponent(SEARCH_ID)}` : "";
     const res = await fetch(`${INTAKE_API}${searchParam}`, {
       headers: { "x-positions-key": store.positionsKey },
     });
-    if (!res.ok) { container.innerHTML = '<p class="muted">Could not load queue.</p>'; return; }
+    if (!res.ok) return;
     const data = await res.json();
-    const volunteers = Array.isArray(data.volunteers) ? data.volunteers : [];
-    if (!volunteers.length) { container.innerHTML = '<p class="muted">No volunteers registered yet.</p>'; return; }
-    container.innerHTML = renderVolunteerQueue(volunteers);
-  } catch {
-    container.innerHTML = '<p class="muted">Queue unavailable — check connection.</p>';
-  }
+    _cachedVolunteers = Array.isArray(data.volunteers) ? data.volunteers : [];
+    if (container) {
+      container.innerHTML = _renderQueueContents();
+      _bindQueueActions(container);
+    }
+  } catch { /* silent — stale cache stays visible */ }
 }
 
-function renderVolunteerQueue(volunteers) {
-  return `
-    <ul class="volunteer-queue-list">
-      ${volunteers.map((v) => renderVolunteerRow(v)).join("")}
-    </ul>
-  `;
-}
-
-function renderVolunteerRow(v) {
+function _renderVolunteerRow(v) {
   const name = escapeHtml(`${v.firstName} ${v.lastName}`);
   const phone = escapeHtml(v.phone || "");
   const status = escapeHtml(v.status || "queued");
   const cell = v.assignedCell ? escapeHtml(v.assignedCell) : null;
-
-  const smsLink = v.phone && v.trackingUrl && v.assignedCell
-    ? buildSmsLink(v)
-    : "";
+  const smsLink = v.phone && v.trackingUrl && v.assignedCell ? buildSmsLink(v) : "";
+  const canAssign = v.status !== "completed";
 
   return `
-    <li class="volunteer-queue-row">
+    <li class="volunteer-queue-row" data-vol-id="${escapeAttr(v.id)}">
       <div class="vq-name">${name}</div>
       <div class="vq-meta">
         ${phone ? `<a href="tel:${escapeAttr(v.phone)}" class="vq-call">${phone}</a>` : ""}
         <span class="vq-status status-pill ${_statusClass(v.status)}">${status}</span>
         ${cell ? `<span class="vq-cell">Grid ${cell}</span>` : ""}
       </div>
-      ${smsLink ? `<a href="${escapeAttr(smsLink)}" class="button primary vq-send">Send Assignment</a>` : ""}
+      <div class="vq-actions">
+        ${canAssign ? `<button class="button small vq-assign-btn" data-vol-id="${escapeAttr(v.id)}" type="button">${cell ? "Change grid" : "Assign grid"}</button>` : ""}
+        ${smsLink ? `<a href="${escapeAttr(smsLink)}" class="button primary small vq-send">Send SMS</a>` : ""}
+      </div>
     </li>
   `;
+}
+
+function _bindQueueActions(container) {
+  container.querySelectorAll(".vq-assign-btn").forEach((btn) => {
+    btn.addEventListener("click", () => _showAssignForm(btn.dataset.volId, container));
+  });
+}
+
+function _showAssignForm(volunteerId, container) {
+  // Remove any open assign form first.
+  container.querySelector(".vq-assign-form")?.closest(".vq-inline-form-row")?.remove();
+
+  const row = container.querySelector(`[data-vol-id="${volunteerId}"]`);
+  if (!row) return;
+
+  const v = _cachedVolunteers.find((x) => x.id === volunteerId);
+  const currentCell = v?.assignedCell || "";
+
+  const formRow = document.createElement("li");
+  formRow.className = "vq-inline-form-row";
+  formRow.innerHTML = `
+    <form class="vq-assign-form">
+      <label class="vq-assign-label">Grid cell for ${escapeHtml(v ? `${v.firstName} ${v.lastName}` : "volunteer")}</label>
+      <div class="vq-assign-inputs">
+        <input class="vq-grid-input" type="text" placeholder="e.g. J10" value="${escapeAttr(currentCell)}" autocomplete="off" autocapitalize="characters" maxlength="10" />
+        <button type="submit" class="button primary small">Save</button>
+        <button type="button" class="button small vq-cancel-btn">Cancel</button>
+      </div>
+    </form>
+  `;
+
+  row.after(formRow);
+  formRow.querySelector(".vq-grid-input").focus();
+
+  formRow.querySelector(".vq-cancel-btn").addEventListener("click", () => formRow.remove());
+  formRow.querySelector(".vq-assign-form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const cellId = formRow.querySelector(".vq-grid-input").value.trim().toUpperCase();
+    if (!cellId) { showToast("Enter a grid cell ID."); return; }
+    await _submitAssign(volunteerId, cellId, formRow, container);
+  });
+}
+
+async function _submitAssign(volunteerId, cellId, formRow, container) {
+  const submitBtn = formRow.querySelector("[type=submit]");
+  submitBtn.disabled = true;
+  submitBtn.textContent = "Saving…";
+  try {
+    const searchParam = SEARCH_ID || "default";
+    const res = await fetch(INTAKE_API, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        volunteerId,
+        assignedCell: cellId,
+        searchId: searchParam,
+        dispatchKey: store.positionsKey,
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok || !data.ok) throw new Error(data.error || "Save failed");
+    formRow.remove();
+    showToast(`Assigned ${cellId} — tap "Send SMS" to notify.`);
+    // Force refresh so the row updates with the new cell + SMS button.
+    _lastQueueFetch = 0;
+    await loadVolunteerQueue(true);
+  } catch (err) {
+    submitBtn.disabled = false;
+    submitBtn.textContent = "Save";
+    showToast(err.message || "Could not save assignment.");
+  }
 }
 
 function buildSmsLink(v) {

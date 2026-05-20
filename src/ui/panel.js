@@ -9,7 +9,7 @@ import {
   updateCell, sendHeartbeat, releaseCell, clearCell, scanStaleCells,
 } from "../grid/cells.js";
 import { getOpenIncidentForGrid, resolveIncidentForGrid } from "../grid/incidents.js";
-import { renderDispatcherDashboard, renderDispatcherLogin, bindDispatcherLogin, loadVolunteerQueue } from "./dispatcher.js";
+import { renderDispatcherDashboard, renderDispatcherLogin, bindDispatcherLogin, loadVolunteerQueue, bindVolunteerQueueActions } from "./dispatcher.js";
 import { renderZonePanel, renderZoneDetail, bindZonePanel, bindZoneDetail } from "./zone-panel.js";
 import { exportState, exportAudit } from "../utils/export.js";
 import { togglePlaceLastSeen, removeLastSeen, clearLastSeenTrail, geocodeLastSeen, saveLastSeenDetails, handleLastSeenPhoto, renderClueMarkers } from "./map.js";
@@ -46,7 +46,10 @@ export function renderPanel() {
   if (!store.activeCellId) {
     panel.innerHTML = renderCommandPanel();
     bindCommandPanel();
-    if (state.profile.dispatcher) loadVolunteerQueue();
+    if (state.profile.dispatcher) {
+      bindVolunteerQueueActions();
+      loadVolunteerQueue();
+    }
     return;
   }
   panel.innerHTML = renderCellPanel(store.activeCellId);

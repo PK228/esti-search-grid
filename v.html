@@ -175,6 +175,17 @@
     [-79.3985, 43.7064], [-79.4752, 43.6907],
     [-79.4935, 43.7823],
   ];
+  const GRID_EXTENDED_BOUNDARY = [
+    [-79.36935, 43.84043], [-79.33777, 43.77007], [-79.32472, 43.71601],
+    [-79.34052, 43.69864], [-79.34824, 43.69791], [-79.35871, 43.67135],
+    [-79.34875, 43.65198], [-79.41158, 43.63732], [-79.43338, 43.63297],
+    [-79.4557,  43.63931], [-79.47235, 43.63446], [-79.48317, 43.62738],
+    [-79.54857, 43.61434], [-79.57586, 43.67246], [-79.59045, 43.67084],
+    [-79.63165, 43.75222], [-79.6344,  43.77058], [-79.54411, 43.79016],
+    [-79.54754, 43.82807], [-79.50823, 43.83488], [-79.43416, 43.85278],
+    [-79.41158, 43.85767], [-79.37502, 43.86522], [-79.36901, 43.84053],
+    [-79.36935, 43.84043],
+  ];
   const GRID_CELL_KM = 0.5;
   const STATUS_STYLE = {
     open:      { color: "#2f3845", fill: "#ffffff", opacity: 0.08 },
@@ -217,24 +228,103 @@
     });
   }
 
+  function buildExtendedCellFeatures(primaryFeatures) {
+    const extPolygon = turf.polygon([GRID_EXTENDED_BOUNDARY]);
+    const key = (lng, lat) => `${lng.toFixed(5)},${lat.toFixed(5)}`;
+    const seen = new Set();
+
+    primaryFeatures.forEach(f => {
+      const [w, s, e, n] = turf.bbox(f);
+      seen.add(key((w + e) / 2, (s + n) / 2));
+    });
+
+    const queue = [...primaryFeatures];
+    const newItems = [];
+
+    while (queue.length > 0) {
+      const cell = queue.shift();
+      const [w, s, e, n] = turf.bbox(cell);
+      const cw = e - w, ch = n - s;
+      const neighbours = [
+        [w, n, e, n + ch],
+        [w, s - ch, e, s],
+        [e, s, e + cw, n],
+        [w - cw, s, w, n],
+      ];
+      for (const [nw, ns, ne, nn] of neighbours) {
+        const cLng = (nw + ne) / 2, cLat = (ns + nn) / 2;
+        const k = key(cLng, cLat);
+        if (seen.has(k)) continue;
+        seen.add(k);
+        if (!Number.isFinite(cLng) || !Number.isFinite(cLat)) continue;
+        try { if (!turf.booleanPointInPolygon(turf.point([cLng, cLat]), extPolygon)) continue; } catch { continue; }
+        const newCell = turf.polygon([[[nw, ns], [ne, ns], [ne, nn], [nw, nn], [nw, ns]]]);
+        newCell.properties = {};
+        queue.push(newCell);
+        newItems.push({ feature: newCell, lng: cLng, lat: cLat });
+      }
+    }
+
+    const rows = [];
+    newItems.sort((a, b) => b.lat - a.lat || a.lng - b.lng).forEach(item => {
+      const row = rows.find(r => Math.abs(r.lat - item.lat) < GRID_CELL_KM * 0.0048);
+      if (row) { row.items.push(item); row.lat = row.items.reduce((t, c) => t + c.lat, 0) / row.items.length; }
+      else rows.push({ lat: item.lat, items: [item] });
+    });
+    rows.sort((a, b) => b.lat - a.lat);
+    return rows.flatMap((row, ri) => {
+      row.items.sort((a, b) => a.lng - b.lng);
+      return row.items.map((item, ci) => {
+        const id = `E-${rowLabel(ri)}${String(ci + 1).padStart(2, "0")}`;
+        item.feature.properties = { id, center: [item.lng, item.lat] };
+        return item.feature;
+      });
+    });
+  }
+
+  // ---- GPS dot ----
+  let gpsMarker = null;
+  let gpsAccuracyCircle = null;
+
+  function updateGpsDot(lat, lng, accuracy) {
+    if (gpsMarker) {
+      gpsMarker.setLatLng([lat, lng]);
+      if (gpsAccuracyCircle && accuracy) gpsAccuracyCircle.setLatLng([lat, lng]).setRadius(accuracy);
+    } else {
+      if (accuracy) {
+        gpsAccuracyCircle = L.circle([lat, lng], {
+          radius: accuracy, color: "#2563eb", weight: 0, fillColor: "#2563eb", fillOpacity: 0.12,
+        }).addTo(map);
+      }
+      gpsMarker = L.circleMarker([lat, lng], {
+        radius: 8, color: "#fff", weight: 2.5, fillColor: "#2563eb", fillOpacity: 1, pane: "markerPane",
+      }).addTo(map);
+      gpsMarker.bindTooltip("You", { permanent: false, direction: "top", offset: [0, -8] });
+    }
+  }
+
   function renderGrid(cellFeatures, cellStatuses, assignedCellId) {
     const gridGroup = L.layerGroup().addTo(map);
     let assignedBounds = null;
 
     cellFeatures.forEach(feature => {
       const id = feature.properties.id;
+      const isExtended = id.startsWith("E-");
       const status = cellStatuses?.[id]?.status || "open";
       const isAssigned = id === assignedCellId;
       const s = STATUS_STYLE[status] || STATUS_STYLE.open;
       const latlngs = feature.geometry.coordinates[0].map(([lng, lat]) => [lat, lng]);
 
-      L.polygon(latlngs, {
-        color:       isAssigned ? "#1d4ed8" : s.color,
-        weight:      isAssigned ? 3.5 : 1,
-        fillColor:   isAssigned ? "#3b82f6" : s.fill,
-        fillOpacity: isAssigned ? 0.32 : s.opacity,
-        opacity:     isAssigned ? 1 : 0.65,
-      }).addTo(gridGroup);
+      let style;
+      if (isAssigned) {
+        style = { color: "#1d4ed8", weight: 3.5, fillColor: "#3b82f6", fillOpacity: 0.32, opacity: 1 };
+      } else if (isExtended && status === "open") {
+        style = { color: "#d97706", weight: 0.7, fillColor: "#fffbeb", fillOpacity: 0.05, opacity: 0.55 };
+      } else {
+        style = { color: s.color, weight: 1, fillColor: s.fill, fillOpacity: s.opacity, opacity: 0.65 };
+      }
+
+      L.polygon(latlngs, style).addTo(gridGroup);
 
       if (isAssigned) {
         assignedBounds = L.latLngBounds(latlngs);
@@ -252,7 +342,7 @@
     if (assignedBounds) {
       map.fitBounds(assignedBounds, { padding: [50, 50], maxZoom: 16 });
     } else {
-      const bl = GRID_BOUNDARY.map(([lng, lat]) => [lat, lng]);
+      const bl = GRID_EXTENDED_BOUNDARY.map(([lng, lat]) => [lat, lng]);
       map.fitBounds(L.polygon(bl).getBounds(), { padding: [20, 20] });
     }
   }
@@ -374,6 +464,7 @@
     navigator.geolocation.getCurrentPosition(
       pos => {
         currentLat = pos.coords.latitude; currentLng = pos.coords.longitude;
+        updateGpsDot(currentLat, currentLng, pos.coords.accuracy);
         sendPing(currentLat, currentLng, pos.coords.accuracy);
         activateWatch();
       },
@@ -394,6 +485,7 @@
     watchId = navigator.geolocation.watchPosition(
       pos => {
         currentLat = pos.coords.latitude; currentLng = pos.coords.longitude;
+        updateGpsDot(currentLat, currentLng, pos.coords.accuracy);
         if (Date.now() - lastPingAt >= PING_INTERVAL) sendPing(currentLat, currentLng, pos.coords.accuracy);
       },
       () => setSignal(false),
@@ -552,9 +644,11 @@
 
       renderHeader(volunteer);
 
-      // Build and render the full grid, with assigned cell highlighted
+      // Build and render the full grid (primary + extended), with assigned cell highlighted
       try {
-        const cellFeatures = buildCellFeatures();
+        const primaryFeatures = buildCellFeatures();
+        const extendedFeatures = buildExtendedCellFeatures(primaryFeatures);
+        const cellFeatures = [...primaryFeatures, ...extendedFeatures];
         renderGrid(cellFeatures, cellStatuses, volunteer.assignedCell || null);
         let sc = 0, dc = 0;
         Object.values(cellStatuses).forEach(c => {

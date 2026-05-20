@@ -43,6 +43,30 @@ export function getCellStyle(feature) {
     }
   }
 
+  // Assignment overlays — only applied when the cell has no explicit non-open status.
+  const isOccupied = store.occupiedCells?.has(id);
+  const isAssigned = !isOccupied && store.assignedCells?.has(id);
+  if ((isAssigned || isOccupied) && (statusKey === "open" || statusKey === "stale")) {
+    if (isOccupied) {
+      // Volunteer GPS is inside this cell — show as actively searching.
+      return {
+        color: isSelected ? "#111827" : "#154fc0",
+        weight: isSelected ? 4 : 2.5,
+        fillColor: "#2563eb",
+        fillOpacity: isSelected ? 0.52 : 0.38,
+        opacity: 1,
+      };
+    }
+    // Volunteer is assigned but hasn't entered yet — amber "reserved" style.
+    return {
+      color: isSelected ? "#111827" : "#b45309",
+      weight: isSelected ? 4 : 2,
+      fillColor: "#fef3c7",
+      fillOpacity: isSelected ? 0.5 : 0.30,
+      opacity: 0.9,
+    };
+  }
+
   return {
     color: isSelected ? "#111827" : isCurrentGps ? "#6d28d9" : visual.color,
     weight: baseWeight,

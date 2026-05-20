@@ -74,6 +74,15 @@ export async function loadVolunteerQueue(force = false) {
       container.innerHTML = _renderQueueContents();
       _bindQueueActions(container);
     }
+    // Rebuild assigned-cells overlay so the map highlights reserved squares.
+    const assigned = new Map();
+    _cachedVolunteers.forEach((v) => {
+      if (v.assignedCell && v.status !== "completed" && v.status !== "found") {
+        assigned.set(v.assignedCell, `${v.firstName} ${v.lastName}`.trim());
+      }
+    });
+    store.assignedCells = assigned;
+    document.dispatchEvent(new CustomEvent("esti:grid-update"));
   } catch { /* silent — stale cache stays visible */ }
 }
 

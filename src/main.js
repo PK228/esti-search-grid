@@ -52,6 +52,8 @@ function init() {
     if (!store.dispatcherLoginOpen && !_panelInputFocused()) renderPanel();
   });
 
+  document.addEventListener("esti:grid-update", () => refreshGrid());
+
   document.addEventListener("esti:mode-buttons-changed", _refreshModeButtons);
 
   document.addEventListener("esti:shared-state-applied", () => {

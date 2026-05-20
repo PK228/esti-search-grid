@@ -91,6 +91,8 @@ function renderVolunteerMarkers(positions) {
   if (!store.volunteerLayer) return;
   store.volunteerLayer.clearLayers();
   const now = Date.now();
+  const nowOccupied = new Set();
+
   positions.forEach((position) => {
     if (!position || position.userId === state.profile.userId) return;
     if (!Number.isFinite(position.lat) || !Number.isFinite(position.lng)) return;
@@ -109,5 +111,24 @@ function renderVolunteerMarkers(positions) {
       zIndexOffset: 800,
     });
     store.volunteerLayer.addLayer(marker);
+
+    // Detect if volunteer is inside their assigned cell.
+    const cellId = position.team;
+    if (cellId && window.turf) {
+      const feature = store.cellLookup.get(cellId);
+      if (feature) {
+        try {
+          if (window.turf.booleanPointInPolygon(window.turf.point([position.lng, position.lat]), feature)) {
+            nowOccupied.add(cellId);
+          }
+        } catch { /* ignore */ }
+      }
+    }
   });
+
+  // Fire a grid refresh only when occupation state actually changes.
+  const prev = store.occupiedCells;
+  const changed = nowOccupied.size !== prev.size || [...nowOccupied].some((id) => !prev.has(id));
+  store.occupiedCells = nowOccupied;
+  if (changed) document.dispatchEvent(new CustomEvent("esti:grid-update"));
 }

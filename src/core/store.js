@@ -68,6 +68,10 @@ export const store = {
   assigningVolunteerId: null,
   assigningVolunteerName: "",
 
+  // Assignment overlays (dispatcher-only; rebuilt on each queue/positions refresh)
+  assignedCells: new Map(),  // cellId → volunteer display name
+  occupiedCells: new Set(),  // cellIds where a volunteer's GPS is inside their assigned cell
+
   // Timers
   staleTimer: null,
 

@@ -62,7 +62,7 @@
       text-align: center; padding: 12px 0;
       display: flex; flex-direction: column; gap: 12px;
     }
-    .confirm-icon { font-size: 48px; }
+    .confirm-icon { display: flex; justify-content: center; }
     .confirm-title { font-size: 20px; font-weight: 800; }
     .confirm-sub { font-size: 14px; color: #64748b; }
 
@@ -156,7 +156,7 @@
     const card = document.getElementById("card");
     card.innerHTML = `
       <div class="confirm-state">
-        <div class="confirm-icon">✓</div>
+        <div class="confirm-icon"><svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="#16a34a" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><polyline points="8 12 11 15 16 9"/></svg></div>
         <div class="confirm-title">You're in, ${escHtml(firstName)}!</div>
         <div class="confirm-sub">Stand by. Dispatch will text you with your grid assignment and a tracking link.</div>
         <div class="confirm-sub" style="font-weight:600;">Keep your phone on and charged.</div>

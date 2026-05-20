@@ -89,14 +89,16 @@ function _renderVolunteerRow(v) {
     ? v.notes[v.notes.length - 1]
     : null;
   const noteHtml = latestNote
-    ? `<div class="vq-note">📝 ${escapeHtml(latestNote.text)}</div>`
+    ? `<div class="vq-note"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px;flex-shrink:0"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>${escapeHtml(latestNote.text)}</div>`
     : "";
 
   const urgentBanner = v.status === "backup_needed"
-    ? `<div class="vq-urgent">🚨 Backup requested</div>`
+    ? `<div class="vq-urgent"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px;flex-shrink:0"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>Backup requested</div>`
     : v.status === "found"
-    ? `<div class="vq-urgent vq-urgent-found">✅ Missing person found</div>`
+    ? `<div class="vq-urgent vq-urgent-found"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px;flex-shrink:0"><polyline points="20 6 9 17 4 12"/></svg>Missing person found</div>`
     : "";
+
+  const smsLink = v.phone && v.trackingUrl && v.assignedCell ? buildSmsLink(v) : "";
 
   return `
     <li class="volunteer-queue-row" data-vol-id="${escapeAttr(v.id)}">
@@ -111,7 +113,9 @@ function _renderVolunteerRow(v) {
       <div class="vq-actions">
         ${canAssign ? `<button class="button small vq-assign-btn" data-vol-id="${escapeAttr(v.id)}" type="button">${cell ? "Change grid" : "Assign grid"}</button>` : ""}
         ${cell && canAssign ? `<button class="button small vq-remove-btn" data-vol-id="${escapeAttr(v.id)}" type="button">Remove</button>` : ""}
-        ${emailLink ? `<a href="${escapeAttr(emailLink)}" class="button primary small vq-send">Send email</a>` : ""}
+        ${smsLink   ? `<a href="${escapeAttr(smsLink)}"   class="button primary small vq-send">SMS</a>` : ""}
+        ${emailLink ? `<a href="${escapeAttr(emailLink)}" class="button small vq-send">Email</a>` : ""}
+        ${v.assignedCell && v.trackingUrl ? `<button class="button small vq-copy-btn" data-vol-id="${escapeAttr(v.id)}" type="button">Copy</button>` : ""}
       </div>
     </li>
   `;
@@ -123,6 +127,9 @@ function _bindQueueActions(container) {
   });
   container.querySelectorAll(".vq-remove-btn").forEach((btn) => {
     btn.addEventListener("click", () => _removeAssignment(btn.dataset.volId, container));
+  });
+  container.querySelectorAll(".vq-copy-btn").forEach((btn) => {
+    btn.addEventListener("click", () => _copyAssignmentText(btn.dataset.volId, btn));
   });
 }
 
@@ -198,7 +205,7 @@ async function _submitAssign(volunteerId, cellId, container) {
     });
     const data = await res.json();
     if (!res.ok || !data.ok) throw new Error(data.error || "Save failed");
-    showToast(`Assigned ${cellId} — tap "Send email" to notify.`);
+    showToast(`Assigned ${cellId} — tap SMS or Email to notify.`);
     _lastQueueFetch = 0;
     await loadVolunteerQueue(true);
   } catch (err) {
@@ -228,6 +235,35 @@ async function _removeAssignment(volunteerId, container) {
   } catch (err) {
     showToast(err.message || "Could not remove assignment.");
   }
+}
+
+function _buildAssignmentText(v) {
+  const name = `${v.firstName} ${v.lastName}`;
+  const mapsUrl = v.assignedCellCoords
+    ? `https://maps.google.com/?q=${v.assignedCellCoords[1]},${v.assignedCellCoords[0]}`
+    : "";
+  return [
+    `Hi ${name}, you've been assigned to grid ${v.assignedCell} for the search.`,
+    mapsUrl ? `Navigate: ${mapsUrl}` : "",
+    `Your tracking link (keep open during search): ${v.trackingUrl}`,
+  ].filter(Boolean).join("\n");
+}
+
+async function _copyAssignmentText(volunteerId, btn) {
+  const v = _cachedVolunteers.find((x) => x.id === volunteerId);
+  if (!v) return;
+  try {
+    await navigator.clipboard.writeText(_buildAssignmentText(v));
+    const orig = btn.textContent;
+    btn.textContent = "Copied!";
+    setTimeout(() => { btn.textContent = orig; }, 2000);
+  } catch {
+    showToast("Could not copy — try SMS or Email instead.");
+  }
+}
+
+function buildSmsLink(v) {
+  return `sms:${v.phone.replace(/[^\d+]/g, "")}?body=${encodeURIComponent(_buildAssignmentText(v))}`;
 }
 
 function buildEmailLink(v) {

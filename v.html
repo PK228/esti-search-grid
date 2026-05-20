@@ -106,6 +106,8 @@
     }
     .btn:active { opacity: 0.75; }
     .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .btn:focus-visible { outline: 3px solid rgba(37,99,235,0.5); outline-offset: 2px; }
+    @media (prefers-reduced-motion: reduce) { .btn { transition: none; } }
     .btn-primary { background: #2563eb; color: #fff; }
     .btn-backup  { background: #f59e0b; color: #fff; }
     .btn-found   { background: #16a34a; color: #fff; }
@@ -116,7 +118,7 @@
     .call-link:active { opacity: 0.7; }
 
     .done-state { text-align: center; padding: 24px 16px; }
-    .done-icon { font-size: 40px; margin-bottom: 10px; }
+    .done-icon { display: flex; justify-content: center; margin-bottom: 10px; }
     .done-title { font-size: 18px; font-weight: 800; color: #0f172a; }
     .done-sub { font-size: 13px; color: #64748b; margin-top: 6px; }
 
@@ -261,7 +263,7 @@
     const metaParts = [mp.age, mp.gender, mp.category].filter(Boolean);
     const photo = mp.photoData
       ? `<img class="missing-photo" src="${escAttr(mp.photoData)}" alt="Photo" />`
-      : `<div class="missing-photo-placeholder">👤</div>`;
+      : `<div class="missing-photo-placeholder" aria-label="No photo"><svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></div>`;
     const fields = [
       mp.description  && `<div class="missing-field"><div class="missing-field-label">Description</div><div class="missing-field-value">${escHtml(mp.description)}</div></div>`,
       mp.clothing     && `<div class="missing-field"><div class="missing-field-label">Clothing</div><div class="missing-field-value">${escHtml(mp.clothing)}</div></div>`,
@@ -355,7 +357,7 @@
     stopTracking();
     bodyEl.innerHTML = `
       <div class="done-state">
-        <div class="done-icon">✓</div>
+        <div class="done-icon"><svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#16a34a" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg></div>
         <div class="done-title">${escHtml(message)}</div>
         <div class="done-sub">Stand by for further instructions.</div>
       </div>`;

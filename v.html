@@ -225,10 +225,13 @@
   }
 
   function buildNavUrl(coords) {
-    if (!coords) return null;
-    const [lng, lat] = coords;
-    // Universal link: opens Apple Maps on iOS, Google Maps on Android/desktop
-    return `https://maps.google.com/?daddr=${lat},${lng}`;
+    if (coords && Array.isArray(coords) && coords.length === 2) {
+      const [lng, lat] = coords;
+      if (Number.isFinite(lat) && Number.isFinite(lng)) {
+        return `https://maps.google.com/?daddr=${lat},${lng}`;
+      }
+    }
+    return null;
   }
 
   function renderMain() {
@@ -537,13 +540,19 @@
         map.setView([43.75, -79.45], 11);
       }
 
-      // Navigation button — inserted between map and body content
-      const navUrl = buildNavUrl(volunteer.assignedCellCoords);
-      if (navUrl && volunteer.assignedCell) {
+      // Navigation button — always shown when a cell is assigned
+      if (volunteer.assignedCell) {
+        const navUrl = buildNavUrl(volunteer.assignedCellCoords);
         const navEl = document.createElement("a");
-        navEl.href = navUrl;
         navEl.className = "nav-btn";
-        navEl.innerHTML = `<span class="nav-btn-icon">↗</span> Navigate to Grid ${escHtml(volunteer.assignedCell)}`;
+        if (navUrl) {
+          navEl.href = navUrl;
+          navEl.innerHTML = `<span class="nav-btn-icon">↗</span> Navigate to Grid ${escHtml(volunteer.assignedCell)}`;
+        } else {
+          // Coords not yet saved — link to a general area search as fallback
+          navEl.href = `https://maps.google.com/?q=${encodeURIComponent("Keele Yonge Steeles Eglinton Toronto")}`;
+          navEl.innerHTML = `<span class="nav-btn-icon">↗</span> Navigate to Grid ${escHtml(volunteer.assignedCell)} <span style="font-size:11px;opacity:0.7;margin-left:4px;">(general area)</span>`;
+        }
         document.getElementById("map").after(navEl);
       }
 

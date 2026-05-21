@@ -58,6 +58,10 @@ function hashToken(raw) {
   return crypto.createHash("sha256").update(raw).digest("hex");
 }
 
+function tokenLookupKey(tokenHash) {
+  return `esti:volunteer-token:${tokenHash}`;
+}
+
 function volunteersKey(searchId) {
   if (searchId && /^[a-zA-Z0-9_-]{1,64}$/.test(searchId)) {
     return `esti:search:${searchId}:volunteers`;
@@ -82,9 +86,28 @@ function positionsKey(searchId) {
 // Find volunteer by raw token across a searchId namespace
 async function findVolunteer(rawToken, searchId) {
   const tokenHash = hashToken(rawToken);
-  const key = volunteersKey(searchId || "default");
+  const requestedSearchId = searchId || "default";
+  const key = volunteersKey(requestedSearchId);
   const volunteers = await redisGet(key);
-  return Object.values(volunteers).find((v) => v.tokenHash === tokenHash) || null;
+  const volunteer = Object.values(volunteers).find((v) => v.tokenHash === tokenHash) || null;
+  if (volunteer) {
+    return { volunteer, searchId: volunteer.searchId || requestedSearchId };
+  }
+
+  const lookup = await redisGet(tokenLookupKey(tokenHash));
+  const indexedSearchId = lookup?.searchId;
+  if (!indexedSearchId || indexedSearchId === requestedSearchId) {
+    return { volunteer: null, searchId: requestedSearchId };
+  }
+
+  const indexedVolunteers = await redisGet(volunteersKey(indexedSearchId));
+  const indexedVolunteer = lookup?.volunteerId
+    ? indexedVolunteers[lookup.volunteerId]
+    : Object.values(indexedVolunteers).find((v) => v.tokenHash === tokenHash);
+
+  return indexedVolunteer
+    ? { volunteer: indexedVolunteer, searchId: indexedVolunteer.searchId || indexedSearchId }
+    : { volunteer: null, searchId: requestedSearchId };
 }
 
 function prune(map) {
@@ -111,7 +134,8 @@ module.exports = async function handler(req, res) {
       const searchId = req.query?.s || "default";
       if (!rawToken) { json(res, 400, { ok: false, error: "token required" }); return; }
 
-      const volunteer = await findVolunteer(rawToken, searchId);
+      const resolved = await findVolunteer(rawToken, searchId);
+      const volunteer = resolved.volunteer;
       if (!volunteer) { json(res, 403, { ok: false, error: "Invalid or expired link" }); return; }
 
       json(res, 200, {
@@ -123,7 +147,7 @@ module.exports = async function handler(req, res) {
           assignedCellCoords: volunteer.assignedCellCoords,
           assignedCellBounds: volunteer.assignedCellBounds || null,
           status: volunteer.status,
-          searchId: volunteer.searchId,
+          searchId: resolved.searchId || volunteer.searchId,
           dispatchPhone: process.env.DISPATCH_PHONE || "",
         },
       });
@@ -134,15 +158,21 @@ module.exports = async function handler(req, res) {
       const raw = await readBody(req);
       const payload = raw ? JSON.parse(raw) : {};
       const rawToken = String(payload.token || "");
-      const searchId = String(payload.searchId || "default").slice(0, 64);
+      const requestedSearchId = String(payload.searchId || "default").slice(0, 64);
 
       if (!rawToken) { json(res, 400, { ok: false, error: "token required" }); return; }
 
-      const volunteer = await findVolunteer(rawToken, searchId);
+      const resolved = await findVolunteer(rawToken, requestedSearchId);
+      const volunteer = resolved.volunteer;
       if (!volunteer) { json(res, 403, { ok: false, error: "Invalid or expired link" }); return; }
+      const searchId = resolved.searchId || requestedSearchId;
 
-      // POST /api/volunteer — position ping (path ends in /position or just default)
-      if (!urlPath.endsWith("/complete")) {
+      // POST /api/volunteer or /api/volunteer/position — position ping.
+      const isPositionPing =
+        urlPath.endsWith("/api/volunteer") ||
+        urlPath.endsWith("/api/volunteer/") ||
+        urlPath.endsWith("/position");
+      if (isPositionPing) {
         const lat = Number(payload.lat);
         const lng = Number(payload.lng);
         if (!Number.isFinite(lat) || lat < -90 || lat > 90) {
@@ -163,7 +193,7 @@ module.exports = async function handler(req, res) {
         const accuracy = Number(payload.accuracy);
         const pKey = positionsKey(searchId);
         const positions = prune(await redisGet(pKey));
-        positions[volunteer.id] = {
+        const position = {
           userId: volunteer.id,
           name: `${volunteer.firstName} ${volunteer.lastName}`.trim(),
           team: volunteer.assignedCell || "",
@@ -172,6 +202,7 @@ module.exports = async function handler(req, res) {
           accuracy: Number.isFinite(accuracy) ? Math.round(accuracy) : null,
           updatedAt: now,
         };
+        positions[volunteer.id] = position;
 
         const entries = Object.entries(positions);
         const capped = entries.length > MAX_POSITIONS
@@ -179,7 +210,7 @@ module.exports = async function handler(req, res) {
           : positions;
 
         await redisSet(pKey, capped);
-        json(res, 200, { ok: true });
+        json(res, 200, { ok: true, position });
         return;
       }
 

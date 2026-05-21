@@ -3,6 +3,7 @@ const MAX_AUDIT_EVENTS = 1500;
 const MAX_INCIDENTS = 500;
 const MAX_MISSING_STREETS = 500;
 const MAX_ZONES = 1000;
+const MAX_BOUNDARY_POINTS = 250;
 
 function stateKey(searchId) {
   if (searchId && /^[a-zA-Z0-9_-]{1,64}$/.test(searchId)) {
@@ -120,6 +121,29 @@ function sanitizeMissingPerson(input) {
   };
 }
 
+function sanitizeBoundary(input) {
+  if (!Array.isArray(input) || input.length < 4) return null;
+  const points = input.slice(0, MAX_BOUNDARY_POINTS).map((point) => {
+    if (!Array.isArray(point) || point.length < 2) return null;
+    const lng = Number(point[0]);
+    const lat = Number(point[1]);
+    if (!Number.isFinite(lng) || lng < -180 || lng > 180) return null;
+    if (!Number.isFinite(lat) || lat < -90 || lat > 90) return null;
+    return [
+      Math.round(lng * 100000) / 100000,
+      Math.round(lat * 100000) / 100000,
+    ];
+  }).filter(Boolean);
+
+  if (points.length < 4) return null;
+  const first = points[0];
+  const last = points[points.length - 1];
+  if (first[0] !== last[0] || first[1] !== last[1]) {
+    points.push([...first]);
+  }
+  return points;
+}
+
 function sanitizeClue(input) {
   if (!input || typeof input !== "object" || typeof input.id !== "string") return null;
   return {
@@ -214,6 +238,7 @@ function sanitizeState(input) {
     lastSeenTrail,
     clues,
     missingPerson: sanitizeMissingPerson(input?.missingPerson),
+    customExtendedBoundary: sanitizeBoundary(input?.customExtendedBoundary),
   };
 }
 

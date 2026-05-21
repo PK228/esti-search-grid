@@ -94,10 +94,11 @@ function renderVolunteerMarkers(positions) {
   const nowOccupied = new Set();
 
   positions.forEach((position) => {
-    if (!position || position.userId === state.profile.userId) return;
+    if (!position) return;
     if (!Number.isFinite(position.lat) || !Number.isFinite(position.lng)) return;
     if (typeof position.updatedAt === "number" && now - position.updatedAt > POSITION_IDLE_MS) return;
-    const name = escapeAttr(position.name || "Volunteer");
+    const isSelf = position.userId === state.profile.userId;
+    const name = escapeAttr(isSelf ? `${position.name || "Volunteer"} (you)` : position.name || "Volunteer");
     const age = now - (position.updatedAt || 0);
     const freshnessClass = age < POSITION_FRESH_MS ? "vol-fresh" : age < POSITION_STALE_MS ? "vol-stale" : "vol-offgrid";
     const marker = L.marker([position.lat, position.lng], {

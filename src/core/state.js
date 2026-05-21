@@ -104,6 +104,8 @@ function loadState() {
       localStorage.getItem(STORAGE_KEY) || localStorage.getItem(LEGACY_STORAGE_KEY);
     if (!raw) return fallback;
     const saved = JSON.parse(raw);
+    const search = { ...defaultSearch(), ...(saved.search || {}) };
+    if (SEARCH_ID) search.id = SEARCH_ID;
     return {
       cells: normalizeCells(saved.cells || {}),
       zones: saved.zones && typeof saved.zones === "object" ? saved.zones : {},
@@ -114,7 +116,7 @@ function loadState() {
       lastSeen: saved.lastSeen || null,
       lastSeenTrail: Array.isArray(saved.lastSeenTrail) ? saved.lastSeenTrail : [],
       clues: Array.isArray(saved.clues) ? saved.clues : [],
-      search: { ...defaultSearch(), ...(saved.search || {}) },
+      search,
       missingPerson: { ...defaultMissingPerson(), ...(saved.missingPerson || {}) },
       customExtendedBoundary: Array.isArray(saved.customExtendedBoundary) ? saved.customExtendedBoundary : null,
     };
@@ -162,6 +164,7 @@ export function sharedPayload() {
     lastSeenTrail: state.lastSeenTrail || [],
     clues: state.clues || [],
     missingPerson: state.missingPerson,
+    customExtendedBoundary: state.customExtendedBoundary || null,
     ...(state.search?.id ? { searchId: state.search.id } : {}),
   };
 }

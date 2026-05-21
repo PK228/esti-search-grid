@@ -45,6 +45,11 @@ function applySharedState(remote) {
   state.lastSeen = remote.lastSeen || null;
   state.lastSeenTrail = Array.isArray(remote.lastSeenTrail) ? remote.lastSeenTrail : [];
   state.clues = Array.isArray(remote.clues) ? remote.clues : state.clues || [];
+  if (Object.prototype.hasOwnProperty.call(remote, "customExtendedBoundary")) {
+    state.customExtendedBoundary = Array.isArray(remote.customExtendedBoundary)
+      ? remote.customExtendedBoundary
+      : null;
+  }
   if (remote.missingPerson && typeof remote.missingPerson === "object") {
     state.missingPerson = { ...state.missingPerson, ...remote.missingPerson };
   }

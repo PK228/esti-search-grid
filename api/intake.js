@@ -59,6 +59,10 @@ function hashToken(raw) {
   return crypto.createHash("sha256").update(raw).digest("hex");
 }
 
+function tokenLookupKey(tokenHash) {
+  return `esti:volunteer-token:${tokenHash}`;
+}
+
 function generateToken() {
   return crypto.randomBytes(12).toString("base64url");
 }
@@ -79,6 +83,25 @@ function baseUrl(req) {
   return `${proto}://${host}`;
 }
 
+function trackingUrlFor(req, rawToken, searchId) {
+  const url = new URL(`/v/${rawToken}`, baseUrl(req));
+  url.searchParams.set("s", searchId || "default");
+  return url.toString();
+}
+
+function ensureTrackingSearchParam(trackingUrl, searchId, req) {
+  if (!trackingUrl) return "";
+  try {
+    const url = new URL(trackingUrl, baseUrl(req));
+    if (!url.searchParams.get("s")) {
+      url.searchParams.set("s", searchId || "default");
+    }
+    return url.toString();
+  } catch {
+    return trackingUrl;
+  }
+}
+
 module.exports = async function handler(req, res) {
   if (req.method === "OPTIONS") { json(res, 200, { ok: true }); return; }
 
@@ -97,7 +120,7 @@ module.exports = async function handler(req, res) {
       const rawToken = generateToken();
       const tokenHash = hashToken(rawToken);
       const volunteerId = crypto.randomBytes(6).toString("hex");
-      const trackingUrl = `${baseUrl(req)}/v/${rawToken}`;
+      const trackingUrl = trackingUrlFor(req, rawToken, searchId);
 
       volunteers[volunteerId] = {
         id: volunteerId,
@@ -111,7 +134,10 @@ module.exports = async function handler(req, res) {
         searchId,
       };
 
-      await redisSet(key, volunteers);
+      await Promise.all([
+        redisSet(key, volunteers),
+        redisSet(tokenLookupKey(tokenHash), { searchId, volunteerId }),
+      ]);
       json(res, 200, { ok: true, volunteerId, token: rawToken, trackingUrl, searchId });
       return;
     }
@@ -127,7 +153,10 @@ module.exports = async function handler(req, res) {
       const key = volunteersKey(searchId);
       const volunteers = await redisGet(key);
       // Strip tokenHash before returning
-      const safe = Object.values(volunteers).map(({ tokenHash: _t, ...v }) => v);
+      const safe = Object.values(volunteers).map(({ tokenHash: _t, ...v }) => ({
+        ...v,
+        trackingUrl: ensureTrackingSearchParam(v.trackingUrl, v.searchId || searchId, req),
+      }));
       json(res, 200, { ok: true, volunteers: safe });
       return;
     }

@@ -134,6 +134,25 @@
     .summary-item-v { background: #fff; border: 1px solid #e2e8f0; border-radius: 10px; padding: 10px 8px; text-align: center; }
     .summary-item-v strong { display: block; font-size: 22px; font-weight: 800; color: #0f172a; line-height: 1; }
     .summary-item-v span { display: block; font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: #64748b; margin-top: 3px; }
+    .cell-label-v { pointer-events: none; text-align: center; }
+    .cell-label-v .cell-id-v {
+      display: inline-block; min-width: 38px; padding: 2px 5px;
+      border-radius: 6px; background: rgba(15, 23, 42, 0.72); color: #fff;
+      font-size: 10px; font-weight: 800; line-height: 1.25;
+      box-shadow: 0 1px 4px rgba(15, 23, 42, 0.22);
+    }
+    .cell-label-v .cell-count-v {
+      display: inline-flex; align-items: center; justify-content: center;
+      min-width: 16px; height: 16px; margin-left: 2px; border-radius: 999px;
+      background: #2563eb; color: #fff; font-size: 10px; font-weight: 800;
+      box-shadow: 0 1px 4px rgba(15, 23, 42, 0.22);
+    }
+    .own-location-tooltip {
+      background: #2563eb; border: 0; color: #fff; border-radius: 6px;
+      box-shadow: 0 2px 8px rgba(15, 23, 42, 0.22);
+      font-size: 11px; font-weight: 800; padding: 3px 7px;
+    }
+    .own-location-tooltip::before { border-top-color: #2563eb; }
   </style>
 </head>
 <body>
@@ -146,10 +165,18 @@
   <div class="bottom-panel" id="body-content"></div>
 </div>
 
-<script>
+<script type="module">
+import {
+  LABEL_MIN_ZOOM,
+  SEARCH_AREA,
+  SEARCH_AREA_EXTENDED,
+  STATUS,
+} from "/src/core/constants.js";
+import { buildSearchCellFeatures } from "/src/grid/features.js";
+
 (function () {
   const token = window.location.pathname.replace(/^\/v\//, "").split("?")[0];
-  const searchId = new URLSearchParams(window.location.search).get("s") || "default";
+  let searchId = new URLSearchParams(window.location.search).get("s") || "default";
   const BASE = window.location.origin;
 
   let volunteer = null;
@@ -167,94 +194,106 @@
 
   // ---- Map ----
   const map = L.map("map", { zoomControl: true, attributionControl: false, dragging: true });
-  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19 }).addTo(map);
+  const streetLayer = L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    maxZoom: 19,
+  });
+  const satelliteLayer = L.tileLayer(
+    "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+    { maxZoom: 19 },
+  );
+  let activeBaseLayer = streetLayer;
+  let gridGroup = null;
+  let labelGroup = L.layerGroup().addTo(map);
+  let boundaryLayer = null;
+  let extBoundaryLayer = null;
+  let activeCellFeatures = [];
+  let activeCellStatuses = {};
+  let activeExtendedBoundary = SEARCH_AREA_EXTENDED.boundary;
+  const STATUS_STYLE = Object.fromEntries(
+    Object.entries(STATUS).map(([key, visual]) => [
+      key,
+      { color: visual.color, fill: visual.fill, opacity: visual.opacity },
+    ]),
+  );
 
-  // ---- Grid constants (mirrors src/core/constants.js) ----
-  const GRID_BOUNDARY = [
-    [-79.4935, 43.7823], [-79.4196, 43.7983],
-    [-79.3985, 43.7064], [-79.4752, 43.6907],
-    [-79.4935, 43.7823],
-  ];
-  const GRID_EXTENDED_BOUNDARY = [
-    [-79.36935, 43.84043], [-79.33777, 43.77007], [-79.32472, 43.71601],
-    [-79.34052, 43.69864], [-79.34824, 43.69791], [-79.35871, 43.67135],
-    [-79.34875, 43.65198], [-79.41158, 43.63732], [-79.43338, 43.63297],
-    [-79.4557,  43.63931], [-79.47235, 43.63446], [-79.48317, 43.62738],
-    [-79.54857, 43.61434], [-79.57586, 43.67246], [-79.59045, 43.67084],
-    [-79.63165, 43.75222], [-79.6344,  43.77058], [-79.54411, 43.79016],
-    [-79.54754, 43.82807], [-79.50823, 43.83488], [-79.43416, 43.85278],
-    [-79.41158, 43.85767], [-79.37502, 43.86522], [-79.36901, 43.84053],
-    [-79.36935, 43.84043],
-  ];
-  const GRID_CELL_KM = 0.5;
-  const STATUS_STYLE = {
-    open:      { color: "#2f3845", fill: "#ffffff", opacity: 0.08 },
-    searching: { color: "#154fc0", fill: "#2563eb", opacity: 0.28 },
-    done:      { color: "#12632f", fill: "#16a34a", opacity: 0.34 },
-    stopped:   { color: "#334155", fill: "#64748b", opacity: 0.30 },
-    backup:    { color: "#8b3f05", fill: "#f59e0b", opacity: 0.42 },
-    emergency: { color: "#991b1b", fill: "#ef4444", opacity: 0.48 },
-    found:     { color: "#9f1239", fill: "#e11d48", opacity: 0.52 },
-    stale:     { color: "#92400e", fill: "#fbbf24", opacity: 0.30 },
-  };
+  streetLayer.addTo(map);
+  addSatelliteToggle();
+  map.on("zoomend", renderLabels);
 
-  function rowLabel(index) {
-    let label = "", value = index;
-    do { label = String.fromCharCode(65 + (value % 26)) + label; value = Math.floor(value / 26) - 1; } while (value >= 0);
-    return label;
+  function addSatelliteToggle() {
+    const SatToggle = L.Control.extend({
+      onAdd() {
+        const btn = L.DomUtil.create("button", "leaflet-sat-toggle");
+        btn.type = "button";
+        btn.title = "Toggle satellite view";
+        btn.textContent = "Satellite";
+        L.DomEvent.on(btn, "click", (e) => {
+          L.DomEvent.stopPropagation(e);
+          if (activeBaseLayer === streetLayer) {
+            map.removeLayer(streetLayer);
+            satelliteLayer.addTo(map);
+            activeBaseLayer = satelliteLayer;
+            btn.textContent = "Street";
+            btn.classList.add("active");
+          } else {
+            map.removeLayer(satelliteLayer);
+            streetLayer.addTo(map);
+            activeBaseLayer = streetLayer;
+            btn.textContent = "Satellite";
+            btn.classList.remove("active");
+          }
+        });
+        return btn;
+      },
+    });
+    new SatToggle({ position: "topright" }).addTo(map);
   }
 
-  function buildCellFeatures() {
-    const bp = turf.polygon([GRID_BOUNDARY]);
-    const grid = turf.squareGrid(turf.bbox(bp), GRID_CELL_KM, { units: "kilometers", mask: bp });
-    const enriched = grid.features.map(f => {
-      const [lng, lat] = turf.centroid(f).geometry.coordinates;
-      return { f, lng, lat };
-    });
-    const rows = [];
-    enriched.sort((a, b) => b.lat - a.lat || a.lng - b.lng).forEach(item => {
-      const row = rows.find(r => Math.abs(r.lat - item.lat) < GRID_CELL_KM * 0.0048);
-      if (row) { row.items.push(item); row.lat = row.items.reduce((t, c) => t + c.lat, 0) / row.items.length; }
-      else rows.push({ lat: item.lat, items: [item] });
-    });
-    rows.sort((a, b) => b.lat - a.lat);
-    return rows.flatMap((row, ri) => {
-      row.items.sort((a, b) => a.lng - b.lng);
-      return row.items.map((item, ci) => {
-        const id = `${rowLabel(ri)}${String(ci + 1).padStart(2, "0")}`;
-        item.f.properties = { id, center: [item.lng, item.lat] };
-        return item.f;
-      });
-    });
+  function renderBoundaries(extendedBoundary) {
+    if (boundaryLayer) map.removeLayer(boundaryLayer);
+    if (extBoundaryLayer) map.removeLayer(extBoundaryLayer);
+
+    boundaryLayer = L.polygon(SEARCH_AREA.boundary.map(([lng, lat]) => [lat, lng]), {
+      color: "#111827",
+      weight: 2.5,
+      opacity: 0.95,
+      fill: false,
+      interactive: false,
+    }).addTo(map);
+
+    extBoundaryLayer = L.polygon(extendedBoundary.map(([lng, lat]) => [lat, lng]), {
+      color: "#111827",
+      weight: 2.5,
+      opacity: 0.95,
+      fill: false,
+      interactive: false,
+    }).addTo(map);
   }
 
-  function buildExtendedCellFeatures() {
-    const extBp = turf.polygon([GRID_EXTENDED_BOUNDARY]);
-    const primaryBp = turf.polygon([GRID_BOUNDARY]);
-    const grid = turf.squareGrid(turf.bbox(extBp), GRID_CELL_KM, { units: "kilometers", mask: extBp });
-    // Keep only cells whose centers fall outside the primary boundary.
-    const extOnly = grid.features.filter(f => {
-      const [lng, lat] = turf.centroid(f).geometry.coordinates;
-      try { return !turf.booleanPointInPolygon(turf.point([lng, lat]), primaryBp); } catch { return true; }
-    });
-    const enriched = extOnly.map(f => {
-      const [lng, lat] = turf.centroid(f).geometry.coordinates;
-      return { f, lng, lat };
-    });
-    const rows = [];
-    enriched.sort((a, b) => b.lat - a.lat || a.lng - b.lng).forEach(item => {
-      const row = rows.find(r => Math.abs(r.lat - item.lat) < GRID_CELL_KM * 0.0048);
-      if (row) { row.items.push(item); row.lat = row.items.reduce((t, c) => t + c.lat, 0) / row.items.length; }
-      else rows.push({ lat: item.lat, items: [item] });
-    });
-    rows.sort((a, b) => b.lat - a.lat);
-    return rows.flatMap((row, ri) => {
-      row.items.sort((a, b) => a.lng - b.lng);
-      return row.items.map((item, ci) => {
-        const id = `E-${rowLabel(ri)}${String(ci + 1).padStart(2, "0")}`;
-        item.f.properties = { id, center: [item.lng, item.lat] };
-        return item.f;
+  function renderLabels() {
+    if (!labelGroup) return;
+    labelGroup.clearLayers();
+    if (map.getZoom() < LABEL_MIN_ZOOM) return;
+
+    activeCellFeatures.forEach((feature) => {
+      const [lng, lat] = feature.properties.center;
+      const id = feature.properties.id;
+      const searchers = Array.isArray(activeCellStatuses?.[id]?.searchers)
+        ? activeCellStatuses[id].searchers
+        : [];
+      const badge = searchers.length
+        ? `<span class="cell-count-v">${searchers.length}</span>`
+        : "";
+      const label = L.marker([lat, lng], {
+        interactive: false,
+        icon: L.divIcon({
+          className: "cell-label-v",
+          html: `<span class="cell-id-v">${escHtml(id)}</span>${badge}`,
+          iconSize: [48, 20],
+          iconAnchor: [24, 10],
+        }),
       });
+      labelGroup.addLayer(label);
     });
   }
 
@@ -275,12 +314,30 @@
       gpsMarker = L.circleMarker([lat, lng], {
         radius: 8, color: "#fff", weight: 2.5, fillColor: "#2563eb", fillOpacity: 1, pane: "markerPane",
       }).addTo(map);
-      gpsMarker.bindTooltip("You", { permanent: false, direction: "top", offset: [0, -8] });
+      gpsMarker.bindTooltip("You", {
+        permanent: true,
+        direction: "top",
+        offset: [0, -10],
+        className: "own-location-tooltip",
+      });
     }
   }
 
-  function renderGrid(cellFeatures, cellStatuses, assignedCellId, assignedCellCoords) {
-    const gridGroup = L.layerGroup().addTo(map);
+  function renderGrid(
+    cellFeatures,
+    cellStatuses,
+    assignedCellId,
+    assignedCellCoords,
+    assignedCellBounds,
+    extendedBoundary,
+  ) {
+    activeCellFeatures = cellFeatures;
+    activeCellStatuses = cellStatuses || {};
+    activeExtendedBoundary = extendedBoundary || SEARCH_AREA_EXTENDED.boundary;
+    const extendedBounds = L.latLngBounds(activeExtendedBoundary.map(([lng, lat]) => [lat, lng]));
+    map.fitBounds(extendedBounds, { padding: [20, 20] });
+    if (gridGroup) gridGroup.remove();
+    gridGroup = L.layerGroup().addTo(map);
     let assignedBounds = null;
     let assignedLabel = assignedCellId;
 
@@ -308,7 +365,9 @@
         style = { color: s.color, weight: 1, fillColor: s.fill, fillOpacity: s.opacity, opacity: 0.65 };
       }
 
-      L.polygon(latlngs, style).addTo(gridGroup);
+      L.polygon(latlngs, style)
+        .bindTooltip(`Grid ${id}`, { direction: "top", sticky: true })
+        .addTo(gridGroup);
 
       if (isAssigned) {
         assignedBounds = L.latLngBounds(latlngs);
@@ -323,12 +382,16 @@
       }
     });
 
+    renderBoundaries(activeExtendedBoundary);
+
     if (assignedBounds) {
       map.fitBounds(assignedBounds, { padding: [50, 50], maxZoom: 16 });
+    } else if (Array.isArray(assignedCellBounds) && assignedCellBounds.length === 2) {
+      map.fitBounds(assignedCellBounds, { padding: [50, 50], maxZoom: 16 });
     } else {
-      const bl = GRID_EXTENDED_BOUNDARY.map(([lng, lat]) => [lat, lng]);
-      map.fitBounds(L.polygon(bl).getBounds(), { padding: [20, 20] });
+      map.fitBounds(extendedBounds, { padding: [20, 20] });
     }
+    renderLabels();
   }
 
   // ---- Renderers ----
@@ -496,7 +559,19 @@
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ token, lat, lng, accuracy, searchId }),
       });
-      if (res.ok) { lastSuccessAt = Date.now(); setSignal(true); } else setSignal(false);
+      if (res.ok) {
+        const data = await res.json().catch(() => null);
+        const confirmed = data?.position;
+        if (
+          confirmed &&
+          Number.isFinite(confirmed.lat) &&
+          Number.isFinite(confirmed.lng)
+        ) {
+          updateGpsDot(confirmed.lat, confirmed.lng, confirmed.accuracy);
+        }
+        lastSuccessAt = Date.now();
+        setSignal(true);
+      } else setSignal(false);
     } catch { setSignal(false); }
   }
 
@@ -513,7 +588,9 @@
     const txt = document.getElementById("statusText");
     if (!txt || !lastSuccessAt) return;
     const secs = Math.round((Date.now() - lastSuccessAt) / 1000);
-    txt.textContent = secs < 5 ? "GPS active — just updated" : `GPS active — updated ${secs}s ago`;
+    txt.textContent = secs < 5
+      ? "GPS active — dispatch received your ping"
+      : `GPS active — dispatch received your ping ${secs}s ago`;
   }
 
   // ---- Volunteer actions ----
@@ -609,38 +686,53 @@
   async function boot() {
     if (!token || token.length < 8) { renderError("This link looks invalid. Ask dispatch for a new one."); return; }
     try {
-      const [volRes, stateRes] = await Promise.all([
-        fetch(`${BASE}/api/volunteer?token=${encodeURIComponent(token)}&s=${encodeURIComponent(searchId)}`),
-        fetch(`${BASE}/api/state?s=${encodeURIComponent(searchId)}`),
-      ]);
+      const volRes = await fetch(`${BASE}/api/volunteer?token=${encodeURIComponent(token)}&s=${encodeURIComponent(searchId)}`);
       if (volRes.status === 403) { renderError("This link has expired or is invalid. Contact dispatch."); return; }
       if (!volRes.ok) { renderError("Could not load your assignment. Check your connection and reload."); return; }
 
       const data = await volRes.json();
       volunteer = data.volunteer;
+      if (volunteer?.searchId && volunteer.searchId !== searchId) {
+        searchId = volunteer.searchId;
+        const nextUrl = new URL(window.location.href);
+        nextUrl.searchParams.set("s", searchId);
+        window.history.replaceState(null, "", nextUrl.toString());
+      }
+
+      const stateRes = await fetch(`${BASE}/api/state?s=${encodeURIComponent(searchId)}`);
 
       let cellStatuses = {};
+      let extendedBoundary = SEARCH_AREA_EXTENDED.boundary;
       if (stateRes.ok) {
         const stateData = await stateRes.json();
         missingPersonHtml = renderMissingPerson(stateData?.state?.missingPerson);
         cellStatuses = stateData?.state?.cells || {};
+        if (Array.isArray(stateData?.state?.customExtendedBoundary)) {
+          extendedBoundary = stateData.state.customExtendedBoundary;
+        }
       }
 
       renderHeader(volunteer);
 
       // Build and render the full grid (primary + extended), with assigned cell highlighted
       try {
-        const primaryFeatures = buildCellFeatures();
-        const extendedFeatures = buildExtendedCellFeatures();
-        const cellFeatures = [...primaryFeatures, ...extendedFeatures];
-        renderGrid(cellFeatures, cellStatuses, volunteer.assignedCell || null, volunteer.assignedCellCoords || null);
+        const { cellFeatures } = buildSearchCellFeatures(extendedBoundary);
+        renderGrid(
+          cellFeatures,
+          cellStatuses,
+          volunteer.assignedCell || null,
+          volunteer.assignedCellCoords || null,
+          volunteer.assignedCellBounds || null,
+          extendedBoundary,
+        );
         let sc = 0, dc = 0;
         Object.values(cellStatuses).forEach(c => {
           if (c.status === "searching") sc++;
           else if (c.status === "done") dc++;
         });
         searchCounts = { open: Math.max(0, cellFeatures.length - sc - dc), searching: sc, done: dc };
-      } catch {
+      } catch (err) {
+        console.error("Token grid render failed:", err);
         // Turf unavailable — fall back to a simple view of the assigned cell
         if (volunteer.assignedCellCoords) {
           const [lng, lat] = volunteer.assignedCellCoords;

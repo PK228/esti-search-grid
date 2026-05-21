@@ -105,6 +105,7 @@ module.exports = async function handler(req, res) {
       lastSeenTrail: [],
       clues: [],
       missingPerson: null,
+      customExtendedBoundary: null,
     };
 
     await Promise.all([

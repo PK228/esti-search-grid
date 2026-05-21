@@ -248,14 +248,27 @@ async function _removeAssignment(volunteerId, container) {
 
 function _buildAssignmentText(v) {
   const name = `${v.firstName} ${v.lastName}`;
+  const trackingUrl = _trackingUrlForVolunteer(v);
   const mapsUrl = v.assignedCellCoords
     ? `https://maps.google.com/?q=${v.assignedCellCoords[1]},${v.assignedCellCoords[0]}`
     : "";
   return [
     `Hi ${name}, you've been assigned to grid ${v.assignedCell} for the search.`,
     mapsUrl ? `Navigate: ${mapsUrl}` : "",
-    `Your tracking link (keep open during search): ${v.trackingUrl}`,
+    `Your tracking link (keep open during search): ${trackingUrl}`,
   ].filter(Boolean).join("\n");
+}
+
+function _trackingUrlForVolunteer(v) {
+  if (!v.trackingUrl) return "";
+  try {
+    const url = new URL(v.trackingUrl, window.location.origin);
+    const searchId = v.searchId || SEARCH_ID || "default";
+    if (!url.searchParams.get("s")) url.searchParams.set("s", searchId);
+    return url.toString();
+  } catch {
+    return v.trackingUrl;
+  }
 }
 
 async function _copyAssignmentText(volunteerId, btn) {
@@ -277,6 +290,7 @@ function buildSmsLink(v) {
 
 function buildEmailLink(v) {
   const name = `${v.firstName} ${v.lastName}`;
+  const trackingUrl = _trackingUrlForVolunteer(v);
   const mapsUrl = v.assignedCellCoords
     ? `https://maps.google.com/?q=${v.assignedCellCoords[1]},${v.assignedCellCoords[0]}`
     : "";
@@ -288,7 +302,7 @@ function buildEmailLink(v) {
     mapsUrl ? `Navigate here: ${mapsUrl}` : "",
     ``,
     `Open your tracking page and keep it open during your search:`,
-    v.trackingUrl,
+    trackingUrl,
   ].filter((l) => l !== undefined).join("\n");
   return `mailto:${encodeURIComponent(v.email)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
 }

@@ -1,4 +1,4 @@
-import { STATUS, KOESTER_CATEGORIES } from "../core/constants.js";
+import { STATUS, KOESTER_CATEGORIES, SHARED_STATE_API, SEARCH_ID } from "../core/constants.js";
 import { state, saveState, defaultMissingPerson } from "../core/state.js";
 import { session } from "../core/session.js";
 import { store } from "../core/store.js";
@@ -15,6 +15,7 @@ import { exportState, exportAudit } from "../utils/export.js";
 import { togglePlaceLastSeen, removeLastSeen, clearLastSeenTrail, geocodeLastSeen, saveLastSeenDetails, handleLastSeenPhoto, renderClueMarkers } from "./map.js";
 import { CLUE_TYPES, getCluesForGrid, getOpenClues, logClue, resolveClue } from "../grid/clues.js";
 import { savePositionsKey } from "../core/positions.js";
+import { fetchSharedState } from "../core/sync.js";
 import { escapeHtml, escapeAttr, formatTime, formatRelativeAge, shortId, maskPhone, humanAction } from "../utils/format.js";
 import { showToast } from "../utils/toast.js";
 
@@ -198,6 +199,7 @@ function bindCommandPanel() {
   document.getElementById("mpPhotoInput")?.addEventListener("change", _handleMissingPersonPhoto);
   document.getElementById("runStaleBtn")?.addEventListener("click", () => scanStaleCells({ manual: true }));
   document.getElementById("exportAuditBtn")?.addEventListener("click", exportAudit);
+  document.getElementById("resetCellsBtn")?.addEventListener("click", _resetAllCells);
   document.getElementById("positionsKeyBtn")?.addEventListener("click", async () => {
     await savePositionsKey();
     loadVolunteerQueue();
@@ -214,6 +216,28 @@ function bindCommandPanel() {
       document.dispatchEvent(new CustomEvent("esti:select-cell", { detail: button.dataset.jumpGrid }));
     });
   });
+}
+
+async function _resetAllCells() {
+  if (!window.confirm("Reset all grid cells to open? This clears all statuses (searching, done, stale). Missing person info and clues are kept. This cannot be undone.")) return;
+  try {
+    showToast("Resetting grid…");
+    const searchParam = SEARCH_ID ? `?s=${encodeURIComponent(SEARCH_ID)}` : "";
+    const getRes = await fetch(`${SHARED_STATE_API}${searchParam}`, { cache: "no-store" });
+    if (!getRes.ok) throw new Error(`Fetch failed: ${getRes.status}`);
+    const { state: remote } = await getRes.json();
+    const reset = { ...(remote || {}), cells: {}, updatedAt: Date.now() };
+    const postRes = await fetch(SHARED_STATE_API, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...reset, searchId: SEARCH_ID || undefined }),
+    });
+    if (!postRes.ok) throw new Error(`Save failed: ${postRes.status}`);
+    await fetchSharedState({ initial: false });
+    showToast("All cells reset to open.");
+  } catch (err) {
+    showToast(err.message || "Reset failed.");
+  }
 }
 
 function bindCellPanel(id) {

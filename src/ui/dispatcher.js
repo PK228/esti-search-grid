@@ -30,6 +30,9 @@ export function renderDispatcherDashboard() {
         <button id="runStaleBtn" class="button warning" type="button">Run stale release</button>
         <button id="exportAuditBtn" class="button" type="button">Export audit</button>
       </div>
+      <div class="button-row">
+        <button id="resetCellsBtn" class="button danger" type="button">Reset all cells</button>
+      </div>
       <h3>Volunteer Queue</h3>
       <div id="volunteerQueue">${_renderQueueContents()}</div>
       <div class="dashboard-strip">

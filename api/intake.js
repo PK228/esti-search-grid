@@ -142,8 +142,38 @@ module.exports = async function handler(req, res) {
       return;
     }
 
-    // GET — dispatcher queue (requires positions key)
+    // GET — two sub-paths:
+    //   ?token=  → volunteer polls for their own assignment (public, token-authenticated)
+    //   default  → dispatcher queue (requires x-positions-key header)
     if (req.method === "GET") {
+      const rawToken = String(req.query?.token || "").slice(0, 200);
+
+      if (rawToken) {
+        // Public: volunteer checks their own assignment status using their token
+        const tokenHash   = hashToken(rawToken);
+        const tokenRecord = await redisGet(`esti:volunteer-token:${tokenHash}`);
+        if (!tokenRecord || !tokenRecord.volunteerId) {
+          json(res, 404, { ok: false, error: "Not found" }); return;
+        }
+        const sid = String(tokenRecord.searchId || req.query?.s || "default").slice(0, 64);
+        const volunteers = await redisGet(volunteersKey(sid));
+        const v = volunteers?.[tokenRecord.volunteerId];
+        if (!v) { json(res, 404, { ok: false, error: "Volunteer not found" }); return; }
+        if (v.assignedCell) {
+          json(res, 200, {
+            ok: true, assigned: true,
+            cellId: v.assignedCell,
+            cellCoords: v.assignedCellCoords || null,
+            cellBounds: v.assignedCellBounds || null,
+            searchId: sid,
+          });
+        } else {
+          json(res, 200, { ok: true, assigned: false });
+        }
+        return;
+      }
+
+      // Dispatcher queue — requires positions key
       const configured = process.env.POSITIONS_READ_KEY || "";
       const provided = req.headers["x-positions-key"] || "";
       if (!configured || provided !== configured) {

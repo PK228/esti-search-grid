@@ -302,7 +302,7 @@
   async function checkAssignment(token, volunteerId) {
     try {
       const s = searchId !== "default" ? `&s=${encodeURIComponent(searchId)}` : "";
-      const res = await fetch(`${BASE}/api/volunteer-status?token=${encodeURIComponent(token)}${s}`, {
+      const res = await fetch(`${BASE}/api/intake?token=${encodeURIComponent(token)}${s}`, {
         signal: AbortSignal.timeout(6000),
       });
       if (!res.ok) return;

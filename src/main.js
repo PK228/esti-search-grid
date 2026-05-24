@@ -237,17 +237,18 @@ function _initFromUrl() {
     }
   } else if (state.profile.dispatcher) {
     // Already logged in as dispatcher but URL didn't say /dispatch — sync it.
-    history.replaceState({}, "", "/dispatch");
+    history.replaceState({}, "", "/dispatch" + window.location.search);
   }
 }
 
 function _syncUrlToDispatcherState() {
   const onDispatch = window.location.pathname.startsWith("/dispatch");
   const wantsDispatch = state.profile.dispatcher || store.dispatcherLoginOpen;
+  const qs = window.location.search;
   if (wantsDispatch && !onDispatch) {
-    history.pushState({}, "", "/dispatch");
+    history.pushState({}, "", "/dispatch" + qs);
   } else if (!wantsDispatch && onDispatch) {
-    history.pushState({}, "", "/");
+    history.pushState({}, "", "/" + qs);
   }
 }
 

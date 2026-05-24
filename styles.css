@@ -187,6 +187,20 @@ h3 {
   background: var(--amber);
 }
 
+.button.small {
+  min-height: 30px;
+  padding: 0 10px;
+  font-size: 12px;
+}
+
+.label-text {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: #64748b;
+}
+
 .button.success {
   border-color: #12632f;
   color: #fff;

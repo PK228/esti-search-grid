@@ -527,7 +527,7 @@ export function bindDispatcherDashboard() {
       document.getElementById("goToSearchBtn")?.addEventListener("click", () => {
         const sel = document.getElementById("searchSelectList");
         const id = sel?.value;
-        if (id) window.location.href = `/?s=${encodeURIComponent(id)}`;
+        if (id) window.location.href = `/dispatch?s=${encodeURIComponent(id)}`;
       });
     } catch {
       switchPanel.innerHTML = '<p class="muted">Could not load searches.</p>';
@@ -561,7 +561,7 @@ export function bindDispatcherDashboard() {
       });
       const data = await res.json();
       if (!res.ok || !data.ok) throw new Error(data.error || "Create failed");
-      window.location.href = `/?s=${encodeURIComponent(data.searchId)}`;
+      window.location.href = `/dispatch?s=${encodeURIComponent(data.searchId)}`;
     } catch (err) {
       errEl.textContent = err.message || "Could not create search.";
       errEl.hidden = false;

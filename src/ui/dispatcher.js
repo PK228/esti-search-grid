@@ -514,17 +514,21 @@ export function bindDispatcherDashboard() {
       const res = await fetch(`${SHARED_API_BASE}/api/searches`, { cache: "no-store" });
       const data = await res.json();
       const searches = Array.isArray(data.searches) ? data.searches : [];
-      if (!searches.length) { switchPanel.innerHTML = '<p class="muted">No other searches found.</p>'; return; }
+      // Always include the built-in default search so dispatchers can return to it.
+      const defaultOption = `<option value="" ${!SEARCH_ID ? "selected" : ""}>Default — Toronto (original)</option>`;
+      const apiOptions = searches.map((s) =>
+        `<option value="${escapeAttr(s.searchId)}" ${s.searchId === SEARCH_ID ? "selected" : ""}>${escapeHtml(s.label || s.orgName || s.searchId)}</option>`
+      ).join("");
       switchPanel.innerHTML = `
         <select id="searchSelectList" class="search-select">
-          ${searches.map((s) => `<option value="${escapeAttr(s.searchId)}" ${s.searchId === SEARCH_ID ? "selected" : ""}>${escapeHtml(s.label || s.orgName || s.searchId)}</option>`).join("")}
+          ${defaultOption}${apiOptions}
         </select>
-        <button id="goToSearchBtn" class="button primary small" type="button">Go</button>
+        <button id="goToSearchBtn" class="button primary small" type="button">Go to selected</button>
       `;
       document.getElementById("goToSearchBtn")?.addEventListener("click", () => {
         const sel = document.getElementById("searchSelectList");
         const id = sel?.value;
-        if (id) window.location.href = `/dispatch?s=${encodeURIComponent(id)}`;
+        window.location.href = id ? `/dispatch?s=${encodeURIComponent(id)}` : "/dispatch";
       });
     } catch {
       switchPanel.innerHTML = '<p class="muted">Could not load searches.</p>';

@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Esti — Volunteer Registration</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body {
+      height: 100%;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+      background: #fff;
+      color: #0f172a;
+    }
+    .page {
+      width: 210mm;
+      min-height: 297mm;
+      margin: 0 auto;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 20mm;
+      text-align: center;
+      gap: 0;
+    }
+    .app-name {
+      font-size: 13px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.14em;
+      color: #94a3b8;
+      margin-bottom: 18px;
+    }
+    .headline {
+      font-size: 36px;
+      font-weight: 900;
+      color: #0f172a;
+      line-height: 1.1;
+      margin-bottom: 10px;
+    }
+    .sub {
+      font-size: 17px;
+      color: #475569;
+      margin-bottom: 36px;
+      line-height: 1.5;
+    }
+    .qr-wrap {
+      background: #fff;
+      border: 2px solid #e2e8f0;
+      border-radius: 20px;
+      padding: 24px;
+      margin-bottom: 28px;
+      display: inline-block;
+    }
+    .qr-wrap img {
+      display: block;
+      width: 260px;
+      height: 260px;
+    }
+    .url {
+      font-size: 14px;
+      color: #2563eb;
+      font-weight: 600;
+      margin-bottom: 36px;
+      letter-spacing: 0.01em;
+    }
+    .search-badge {
+      display: inline-block;
+      background: #1d3a8a;
+      color: #fff;
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      border-radius: 6px;
+      padding: 4px 10px;
+      margin-bottom: 10px;
+    }
+    .steps {
+      text-align: left;
+      max-width: 340px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      margin-bottom: 40px;
+    }
+    .step {
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+    }
+    .step-num {
+      flex-shrink: 0;
+      width: 26px;
+      height: 26px;
+      background: #1d3a8a;
+      color: #fff;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 12px;
+      font-weight: 800;
+      margin-top: 1px;
+    }
+    .step-text {
+      font-size: 14px;
+      color: #334155;
+      line-height: 1.45;
+    }
+    .step-text strong { color: #0f172a; }
+    .footer {
+      font-size: 11px;
+      color: #94a3b8;
+      margin-top: auto;
+      padding-top: 20px;
+      border-top: 1px solid #f1f5f9;
+      width: 100%;
+      text-align: center;
+    }
+    @media print {
+      body { margin: 0; }
+      .page { margin: 0; width: 100%; min-height: 100vh; }
+    }
+  </style>
+</head>
+<body>
+<div class="page">
+  <div class="app-name">Esti Search Coordination</div>
+  <div id="searchBadge" class="search-badge" hidden></div>
+  <div class="headline">Volunteer Sign-In</div>
+  <div class="sub">Scan to register before the search begins.</div>
+
+  <div class="qr-wrap">
+    <img id="qrImg" alt="Volunteer registration QR code" />
+  </div>
+
+  <div class="url" id="qrUrl"></div>
+
+  <div class="steps">
+    <div class="step">
+      <div class="step-num">1</div>
+      <div class="step-text"><strong>Scan the code</strong> with your phone camera and open the link.</div>
+    </div>
+    <div class="step">
+      <div class="step-num">2</div>
+      <div class="step-text"><strong>Enter your name, phone, and email.</strong> Takes under a minute.</div>
+    </div>
+    <div class="step">
+      <div class="step-num">3</div>
+      <div class="step-text"><strong>Wait for your assignment.</strong> You'll receive an email and/or text with your grid and a tracking link.</div>
+    </div>
+    <div class="step">
+      <div class="step-num">4</div>
+      <div class="step-text"><strong>Keep your tracking link open</strong> the entire time you are searching.</div>
+    </div>
+  </div>
+
+  <div class="footer">Esti Search Coordination App &nbsp;·&nbsp; a-girl-is-lost-and-i.vercel.app</div>
+</div>
+
+<script>
+(function () {
+  const BASE_DOMAIN = "a-girl-is-lost-and-i.vercel.app";
+  const searchId = new URLSearchParams(window.location.search).get("s") || "";
+
+  const intakeUrl = searchId
+    ? `https://${BASE_DOMAIN}/intake?s=${encodeURIComponent(searchId)}`
+    : `https://${BASE_DOMAIN}/intake`;
+
+  const displayUrl = searchId
+    ? `${BASE_DOMAIN}/intake?s=${searchId}`
+    : `${BASE_DOMAIN}/intake`;
+
+  document.getElementById("qrImg").src =
+    `https://api.qrserver.com/v1/create-qr-code/?size=520x520&data=${encodeURIComponent(intakeUrl)}&margin=10&color=0f172a&bgcolor=ffffff`;
+  document.getElementById("qrUrl").textContent = displayUrl;
+
+  if (searchId) {
+    const badge = document.getElementById("searchBadge");
+    badge.textContent = `Search: ${searchId}`;
+    badge.hidden = false;
+  }
+})();
+</script>
+</body>
+</html>

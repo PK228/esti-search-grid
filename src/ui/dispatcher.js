@@ -470,8 +470,8 @@ function renderSearchControl() {
         <button id="switchSearchBtn" class="button small" type="button">Switch search</button>
         <button id="newSearchBtn" class="button small primary" type="button">+ New search</button>
       </div>
-      <div id="searchSwitcherPanel" hidden></div>
-      <div id="newSearchPanel" hidden>${renderNewSearchForm()}</div>
+      <div id="searchSwitcherPanel" ${store.searchSwitcherOpen ? "" : "hidden"}>${store.searchSwitcherOpen ? '<p class="muted">Loading searches…</p>' : ""}</div>
+      <div id="newSearchPanel" ${store.newSearchOpen ? "" : "hidden"}>${renderNewSearchForm()}</div>
     </div>
   `;
 }
@@ -507,10 +507,7 @@ export function bindDispatcherDashboard() {
   const switchPanel = document.getElementById("searchSwitcherPanel");
   const newPanel = document.getElementById("newSearchPanel");
 
-  switchBtn?.addEventListener("click", async () => {
-    const isOpen = !switchPanel.hidden;
-    if (isOpen) { switchPanel.hidden = true; return; }
-    newPanel.hidden = true;
+  async function _loadSwitcherContent() {
     switchPanel.innerHTML = '<p class="muted">Loading searches…</p>';
     switchPanel.hidden = false;
     try {
@@ -520,7 +517,7 @@ export function bindDispatcherDashboard() {
       if (!searches.length) { switchPanel.innerHTML = '<p class="muted">No other searches found.</p>'; return; }
       switchPanel.innerHTML = `
         <select id="searchSelectList" class="search-select">
-          ${searches.map((s) => `<option value="${escapeAttr(s.searchId)}" ${s.searchId === SEARCH_ID ? "selected" : ""}>${escapeHtml(s.label || s.orgName || s.searchId)} <small>${escapeAttr(s.searchId)}</small></option>`).join("")}
+          ${searches.map((s) => `<option value="${escapeAttr(s.searchId)}" ${s.searchId === SEARCH_ID ? "selected" : ""}>${escapeHtml(s.label || s.orgName || s.searchId)}</option>`).join("")}
         </select>
         <button id="goToSearchBtn" class="button primary small" type="button">Go</button>
       `;
@@ -532,14 +529,33 @@ export function bindDispatcherDashboard() {
     } catch {
       switchPanel.innerHTML = '<p class="muted">Could not load searches.</p>';
     }
+  }
+
+  // If switcher was open before this re-render, reload its content immediately.
+  if (store.searchSwitcherOpen) _loadSwitcherContent();
+
+  switchBtn?.addEventListener("click", () => {
+    store.searchSwitcherOpen = !store.searchSwitcherOpen;
+    store.newSearchOpen = false;
+    newPanel.hidden = true;
+    if (store.searchSwitcherOpen) {
+      _loadSwitcherContent();
+    } else {
+      switchPanel.hidden = true;
+    }
   });
 
   newBtn?.addEventListener("click", () => {
+    store.newSearchOpen = !store.newSearchOpen;
+    store.searchSwitcherOpen = false;
     switchPanel.hidden = true;
-    newPanel.hidden = !newPanel.hidden;
+    newPanel.hidden = !store.newSearchOpen;
   });
 
-  document.getElementById("nsCancelBtn")?.addEventListener("click", () => { newPanel.hidden = true; });
+  document.getElementById("nsCancelBtn")?.addEventListener("click", () => {
+    store.newSearchOpen = false;
+    newPanel.hidden = true;
+  });
 
   document.getElementById("newSearchForm")?.addEventListener("submit", async (e) => {
     e.preventDefault();
@@ -561,6 +577,7 @@ export function bindDispatcherDashboard() {
       });
       const data = await res.json();
       if (!res.ok || !data.ok) throw new Error(data.error || "Create failed");
+      store.newSearchOpen = false;
       window.location.href = `/dispatch?s=${encodeURIComponent(data.searchId)}`;
     } catch (err) {
       errEl.textContent = err.message || "Could not create search.";

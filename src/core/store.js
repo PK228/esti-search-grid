@@ -77,4 +77,8 @@ export const store = {
 
   // Boundary tracing tool (managed by map.js)
   traceBoundaryMode: false,
+
+  // Dispatcher search panel open state (preserved across re-renders)
+  newSearchOpen: false,
+  searchSwitcherOpen: false,
 };

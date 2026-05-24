@@ -5,7 +5,7 @@ function json(res, status, body) {
   res.statusCode = status;
   res.setHeader("Content-Type", "application/json; charset=utf-8");
   res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Methods", "POST,OPTIONS");
+  res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
   res.end(JSON.stringify(body));
 }
@@ -15,6 +15,18 @@ function getRedisConfig() {
     url: process.env.KV_REST_API_URL,
     token: process.env.KV_REST_API_TOKEN,
   };
+}
+
+async function redisGet(key) {
+  const { url, token } = getRedisConfig();
+  if (!url || !token) throw new Error("Redis is not configured");
+  const response = await fetch(`${url}/get/${encodeURIComponent(key)}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!response.ok) throw new Error(`Redis get failed: ${response.status}`);
+  const payload = await response.json();
+  if (!payload.result) return null;
+  try { return JSON.parse(payload.result); } catch { return null; }
 }
 
 async function redisSet(key, value) {
@@ -37,6 +49,17 @@ async function redisLPush(key, value) {
     body: JSON.stringify(value),
   });
   if (!response.ok) throw new Error(`Redis lpush failed: ${response.status}`);
+}
+
+async function redisLRange(key, start, stop) {
+  const { url, token } = getRedisConfig();
+  if (!url || !token) throw new Error("Redis is not configured");
+  const response = await fetch(`${url}/lrange/${encodeURIComponent(key)}/${start}/${stop}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!response.ok) throw new Error(`Redis lrange failed: ${response.status}`);
+  const payload = await response.json();
+  return Array.isArray(payload.result) ? payload.result : [];
 }
 
 function makeSearchId() {
@@ -91,61 +114,91 @@ module.exports = async function handler(req, res) {
     return;
   }
 
-  if (req.method !== "POST") {
-    json(res, 405, { ok: false, error: "Method not allowed" });
-    return;
-  }
-
   try {
-    const raw = await readBody(req);
-    const body = raw ? JSON.parse(raw) : {};
+    // GET /api/searches?s={searchId}  → return meta for that search
+    // GET /api/searches               → return list of all active searches
+    if (req.method === "GET") {
+      const searchId = req.query?.s || "";
+      if (searchId) {
+        if (!/^[a-zA-Z0-9_-]{1,64}$/.test(searchId)) {
+          json(res, 400, { ok: false, error: "Invalid search ID" });
+          return;
+        }
+        const meta = await redisGet(`${SEARCH_KEY_PREFIX}${searchId}:meta`);
+        if (!meta) { json(res, 404, { ok: false, error: "Search not found" }); return; }
+        json(res, 200, { ok: true, meta });
+        return;
+      }
 
-    const orgName = sanitizeString(body.orgName, 120);
-    const orgCity = sanitizeString(body.orgCity, 80);
-    const label = sanitizeString(body.label, 200);
-    const cellKm = sanitizeCellKm(body.cellKm);
-    const boundary = sanitizeBoundary(body.boundary);
+      // List all searches
+      const searchIds = await redisLRange(SEARCH_INDEX_KEY, 0, 99);
+      const unique = [...new Set(searchIds)];
+      const metas = await Promise.all(
+        unique.map((id) => redisGet(`${SEARCH_KEY_PREFIX}${id}:meta`).catch(() => null))
+      );
+      const searches = metas
+        .filter(Boolean)
+        .filter((m) => m.active !== false)
+        .sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
+      json(res, 200, { ok: true, searches });
+      return;
+    }
 
-    const searchId = makeSearchId();
-    const now = new Date().toISOString();
+    // POST /api/searches → create a new search
+    if (req.method === "POST") {
+      const raw = await readBody(req);
+      const body = raw ? JSON.parse(raw) : {};
 
-    const meta = {
-      searchId,
-      orgName,
-      orgCity,
-      label,
-      createdAt: now,
-      active: true,
-      ...(boundary ? { boundary } : {}),
-      cellKm,
-    };
+      const orgName = sanitizeString(body.orgName, 120);
+      const orgCity = sanitizeString(body.orgCity, 80);
+      const label = sanitizeString(body.label, 200);
+      const cellKm = sanitizeCellKm(body.cellKm);
+      const boundary = sanitizeBoundary(body.boundary);
 
-    const initialState = {
-      version: 2,
-      updatedAt: now,
-      cells: {},
-      zones: {},
-      missingStreets: [],
-      audit: [],
-      incidents: [],
-      lastSeen: null,
-      lastSeenTrail: [],
-      clues: [],
-      missingPerson: null,
-      customExtendedBoundary: null,
-    };
+      const searchId = makeSearchId();
+      const now = new Date().toISOString();
 
-    await Promise.all([
-      redisSet(`${SEARCH_KEY_PREFIX}${searchId}:meta`, meta),
-      redisSet(`${SEARCH_KEY_PREFIX}${searchId}:state`, initialState),
-      redisLPush(SEARCH_INDEX_KEY, searchId),
-    ]);
+      const meta = {
+        searchId,
+        orgName,
+        orgCity,
+        label,
+        createdAt: now,
+        active: true,
+        ...(boundary ? { boundary } : {}),
+        cellKm,
+      };
 
-    const origin = req.headers.origin || req.headers.host || "";
-    const baseUrl = origin.startsWith("http") ? origin : `https://${origin}`;
-    const url = `${baseUrl}/?s=${searchId}`;
+      const initialState = {
+        version: 2,
+        updatedAt: now,
+        cells: {},
+        zones: {},
+        missingStreets: [],
+        audit: [],
+        incidents: [],
+        lastSeen: null,
+        lastSeenTrail: [],
+        clues: [],
+        missingPerson: null,
+        customExtendedBoundary: null,
+      };
 
-    json(res, 201, { ok: true, searchId, url, meta });
+      await Promise.all([
+        redisSet(`${SEARCH_KEY_PREFIX}${searchId}:meta`, meta),
+        redisSet(`${SEARCH_KEY_PREFIX}${searchId}:state`, initialState),
+        redisLPush(SEARCH_INDEX_KEY, searchId),
+      ]);
+
+      const origin = req.headers.origin || req.headers.host || "";
+      const baseUrl = origin.startsWith("http") ? origin : `https://${origin}`;
+      const url = `${baseUrl}/?s=${searchId}`;
+
+      json(res, 201, { ok: true, searchId, url, meta });
+      return;
+    }
+
+    json(res, 405, { ok: false, error: "Method not allowed" });
   } catch (error) {
     json(res, 500, {
       ok: false,

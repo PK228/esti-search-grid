@@ -23,7 +23,7 @@ document.addEventListener("DOMContentLoaded", init);
 async function _loadSearchMeta() {
   if (!SEARCH_ID) return;
   try {
-    const res = await fetch(`${SHARED_API_BASE}/api/search-meta?s=${encodeURIComponent(SEARCH_ID)}`, { cache: "no-store" });
+    const res = await fetch(`${SHARED_API_BASE}/api/searches?s=${encodeURIComponent(SEARCH_ID)}`, { cache: "no-store" });
     if (!res.ok) return;
     const { meta } = await res.json();
     if (!meta) return;

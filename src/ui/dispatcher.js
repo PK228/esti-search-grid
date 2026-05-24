@@ -514,7 +514,7 @@ export function bindDispatcherDashboard() {
     switchPanel.innerHTML = '<p class="muted">Loading searches…</p>';
     switchPanel.hidden = false;
     try {
-      const res = await fetch(`${SHARED_API_BASE}/api/searches-list`, { cache: "no-store" });
+      const res = await fetch(`${SHARED_API_BASE}/api/searches`, { cache: "no-store" });
       const data = await res.json();
       const searches = Array.isArray(data.searches) ? data.searches : [];
       if (!searches.length) { switchPanel.innerHTML = '<p class="muted">No other searches found.</p>'; return; }

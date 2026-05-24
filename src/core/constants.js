@@ -7,7 +7,6 @@ export const LEGACY_STORAGE_KEY = "toronto-search-grid-v2";
 export const SESSION_KEY = "toronto-search-grid-session";
 export const SESSION_STARTED_KEY = "toronto-search-grid-session-started";
 export const POSITIONS_KEY_STORE = "esti-search-grid-positions-key";
-export const DISPATCHER_PIN = "2468";
 export const STALE_AFTER_MINUTES = 30;
 export const HEARTBEAT_WARNING_MINUTES = 20;
 export const HEARTBEAT_SCAN_MS = 60 * 1000;

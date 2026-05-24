@@ -9,122 +9,236 @@
     html, body {
       height: 100%;
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      background: #f8fafc; color: #0f172a;
+      background: #0f172a; color: #f1f5f9;
     }
 
+    /* ── Back link ── */
+    .back-link {
+      position: fixed; top: 16px; left: 16px;
+      display: flex; align-items: center; gap: 6px;
+      font-size: 13px; font-weight: 700; color: #64748b;
+      text-decoration: none; transition: color 0.15s;
+    }
+    .back-link:hover { color: #94a3b8; }
+
+    /* ── Layout ── */
     .page {
       min-height: 100dvh;
       display: flex; flex-direction: column;
       justify-content: center; align-items: center;
-      padding: 24px 16px;
+      padding: 64px 20px 32px;
     }
 
     .card {
       width: 100%; max-width: 420px;
-      background: #fff; border-radius: 16px;
-      box-shadow: 0 4px 24px rgba(0,0,0,0.10);
+      background: #1e293b;
+      border-radius: 20px;
+      border: 1px solid #334155;
+      box-shadow: 0 12px 40px rgba(0,0,0,0.45);
       padding: 28px 24px;
       display: flex; flex-direction: column; gap: 20px;
     }
 
+    /* ── Header ── */
     .card-header { text-align: center; }
     .card-eyebrow {
-      font-size: 11px; font-weight: 700; text-transform: uppercase;
-      letter-spacing: 0.08em; color: #64748b; margin-bottom: 6px;
+      font-size: 10px; font-weight: 700; text-transform: uppercase;
+      letter-spacing: 0.1em; color: #16a34a; margin-bottom: 6px;
     }
-    .card-title { font-size: 24px; font-weight: 800; color: #0f172a; }
-    .card-sub { font-size: 14px; color: #64748b; margin-top: 4px; }
+    .card-title { font-size: 24px; font-weight: 900; color: #f8fafc; }
+    .card-sub { font-size: 14px; color: #64748b; margin-top: 5px; line-height: 1.45; }
 
+    /* ── Form ── */
     .form-grid { display: flex; flex-direction: column; gap: 14px; }
     .field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
     label { display: flex; flex-direction: column; gap: 5px; }
     .label-text {
-      font-size: 11px; font-weight: 700; text-transform: uppercase;
-      letter-spacing: 0.05em; color: #64748b;
+      font-size: 10px; font-weight: 700; text-transform: uppercase;
+      letter-spacing: 0.08em; color: #64748b;
     }
     input {
-      width: 100%; border: 1.5px solid #e2e8f0; border-radius: 9px;
-      padding: 12px 13px; font-size: 16px; color: #0f172a;
-      background: #fff; outline: none;
+      width: 100%; border: 1.5px solid #334155; border-radius: 9px;
+      padding: 13px 13px; font-size: 16px; color: #f1f5f9;
+      background: #0f172a; outline: none;
       transition: border-color 0.15s;
+      -webkit-appearance: none;
     }
-    input:focus { border-color: #2563eb; box-shadow: 0 0 0 3px rgba(37,99,235,0.12); }
+    input::placeholder { color: #475569; }
+    input:focus { border-color: #16a34a; box-shadow: 0 0 0 3px rgba(22,163,74,0.15); }
 
     .submit-btn {
-      width: 100%; padding: 15px; background: #2563eb; color: #fff;
-      border: none; border-radius: 10px; font-size: 16px; font-weight: 700;
-      cursor: pointer; transition: opacity 0.15s;
+      width: 100%; padding: 16px; background: #16a34a; color: #fff;
+      border: none; border-radius: 11px; font-size: 16px; font-weight: 700;
+      cursor: pointer; transition: background 0.15s;
+      -webkit-tap-highlight-color: transparent;
     }
-    .submit-btn:hover { opacity: 0.9; }
-    .submit-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .submit-btn:hover { background: #15803d; }
+    .submit-btn:disabled { background: #0f4c2a; color: #4ade80; cursor: not-allowed; }
 
-    .confirm-state {
-      text-align: center; padding: 12px 0;
-      display: flex; flex-direction: column; gap: 12px;
-    }
-    .confirm-icon { display: flex; justify-content: center; }
-    .confirm-title { font-size: 20px; font-weight: 800; }
-    .confirm-sub { font-size: 14px; color: #64748b; }
-
+    /* ── Error ── */
     .error-msg {
-      background: #fee2e2; color: #b91c1c; border-radius: 8px;
-      padding: 10px 13px; font-size: 13px; font-weight: 600;
-      display: none;
+      background: rgba(239,68,68,0.12); color: #fca5a5;
+      border: 1px solid rgba(239,68,68,0.3);
+      border-radius: 8px; padding: 10px 13px;
+      font-size: 13px; font-weight: 600; display: none;
     }
     .error-msg.visible { display: block; }
 
-    .guide-link {
-      text-align: center; padding-top: 4px;
-      font-size: 12px; color: #94a3b8;
+    /* ── Confirm / Awaiting assignment state ── */
+    .confirm-state { display: none; text-align: center; }
+    .confirm-state.visible { display: flex; flex-direction: column; gap: 16px; }
+
+    .confirm-icon { display: flex; justify-content: center; }
+
+    .confirm-title { font-size: 22px; font-weight: 800; color: #f8fafc; }
+    .confirm-sub   { font-size: 14px; color: #64748b; line-height: 1.5; }
+
+    .waiting-block {
+      display: flex; flex-direction: column; gap: 8px;
+      background: #0f172a; border: 1px solid #334155;
+      border-radius: 12px; padding: 16px;
     }
-    .guide-link a {
-      color: #2563eb; text-decoration: none; font-weight: 600;
+    .waiting-label {
+      font-size: 11px; font-weight: 700; text-transform: uppercase;
+      letter-spacing: 0.08em; color: #64748b;
     }
+    .waiting-status {
+      font-size: 14px; color: #94a3b8;
+      display: flex; align-items: center; gap: 8px;
+    }
+    .spinner {
+      width: 14px; height: 14px; border-radius: 50%;
+      border: 2px solid #334155; border-top-color: #16a34a;
+      animation: spin 0.8s linear infinite; flex-shrink: 0;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .assigned-cell-badge {
+      display: inline-block;
+      background: #16a34a; color: #fff;
+      font-size: 18px; font-weight: 900;
+      border-radius: 10px; padding: 8px 20px;
+      letter-spacing: 0.06em;
+    }
+
+    .open-map-btn {
+      display: block; width: 100%; padding: 16px;
+      background: #16a34a; color: #fff;
+      border: none; border-radius: 11px;
+      font-size: 16px; font-weight: 700;
+      text-decoration: none; text-align: center;
+      transition: background 0.15s;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .open-map-btn:hover { background: #15803d; }
+
+    /* ── Guide ── */
+    .guide-link { text-align: center; font-size: 12px; color: #475569; }
+    .guide-link a { color: #4ade80; text-decoration: none; font-weight: 600; }
     .guide-link a:hover { text-decoration: underline; }
   </style>
 </head>
 <body>
+
+<a href="/" class="back-link" id="backLink">
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="15 18 9 12 15 6"/></svg>
+  Home
+</a>
+
 <div class="page">
   <div class="card" id="card">
-    <div class="card-header">
-      <div class="card-eyebrow">Search Operation</div>
-      <div class="card-title">Volunteer Check-In</div>
-      <div class="card-sub">Fill in your details. Dispatch will text you your assignment.</div>
+
+    <!-- Form state -->
+    <div id="formState">
+      <div class="card-header">
+        <div class="card-eyebrow">Volunteer Check-In</div>
+        <div class="card-title">Join the Search</div>
+        <div class="card-sub">Fill in your details. A dispatcher will review and assign you a grid.</div>
+      </div>
+
+      <form id="intakeForm" class="form-grid" novalidate>
+        <div class="field-row">
+          <label>
+            <span class="label-text">First name *</span>
+            <input id="firstName" type="text" autocomplete="given-name" placeholder="First" required />
+          </label>
+          <label>
+            <span class="label-text">Last name *</span>
+            <input id="lastName" type="text" autocomplete="family-name" placeholder="Last" required />
+          </label>
+        </div>
+        <label>
+          <span class="label-text">Phone number</span>
+          <input id="phone" type="tel" autocomplete="tel" inputmode="tel" placeholder="+1 (416) 555-0000" />
+        </label>
+        <label>
+          <span class="label-text">Email address</span>
+          <input id="email" type="email" autocomplete="email" inputmode="email" placeholder="you@example.com" />
+        </label>
+        <div id="errorMsg" class="error-msg" role="alert"></div>
+        <button type="submit" class="submit-btn" id="submitBtn">Check In &rarr;</button>
+      </form>
+
+      <div class="guide-link">
+        <a href="/docs/volunteer-guide.pdf" target="_blank">Volunteer guide (PDF)</a>
+      </div>
     </div>
 
-    <form id="intakeForm" class="form-grid" novalidate>
-      <div class="field-row">
-        <label>
-          <span class="label-text">First name *</span>
-          <input id="firstName" type="text" autocomplete="given-name" placeholder="First" required />
-        </label>
-        <label>
-          <span class="label-text">Last name *</span>
-          <input id="lastName" type="text" autocomplete="family-name" placeholder="Last" required />
-        </label>
+    <!-- Awaiting assignment state -->
+    <div id="confirmState" class="confirm-state">
+      <div class="confirm-icon">
+        <svg width="52" height="52" viewBox="0 0 24 24" fill="none" stroke="#16a34a" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <circle cx="12" cy="12" r="10"/>
+          <polyline points="8 12 11 15 16 9"/>
+        </svg>
       </div>
-      <label>
-        <span class="label-text">Phone number</span>
-        <input id="phone" type="tel" autocomplete="tel" placeholder="+1 (416) 555-0000" />
-      </label>
-      <label>
-        <span class="label-text">Email address</span>
-        <input id="email" type="email" autocomplete="email" placeholder="you@example.com" />
-      </label>
-      <div id="errorMsg" class="error-msg"></div>
-      <button type="submit" class="submit-btn" id="submitBtn">I'm Here — Check In</button>
-    </form>
-    <div class="guide-link">
-      <a href="/docs/volunteer-guide.pdf" target="_blank">Volunteer guide (PDF)</a>
+      <div class="confirm-title" id="confirmTitle">You're in!</div>
+      <div class="confirm-sub">Your details have been sent to the dispatcher. Stand by for your grid assignment.</div>
+
+      <div class="waiting-block" id="waitingBlock">
+        <div class="waiting-label">Assignment</div>
+        <div class="waiting-status" id="waitingStatus">
+          <span class="spinner"></span>
+          <span>Waiting for dispatcher…</span>
+        </div>
+      </div>
+
+      <div id="assignedBlock" style="display:none;flex-direction:column;gap:12px;">
+        <div class="confirm-sub" style="font-weight:700;color:#f1f5f9;">You've been assigned:</div>
+        <div><span class="assigned-cell-badge" id="assignedCellBadge">—</span></div>
+        <a id="openMapBtn" href="#" class="open-map-btn">Open My Map &rarr;</a>
+      </div>
+
+      <div class="guide-link">
+        <a href="/docs/volunteer-guide.pdf" target="_blank">Volunteer guide (PDF)</a>
+      </div>
     </div>
+
   </div>
 </div>
 
 <script>
 (function () {
-  const BASE = window.location.origin;
-  const searchId = new URLSearchParams(window.location.search).get("s") || "default";
+  const BASE     = window.location.origin;
+  const params   = new URLSearchParams(window.location.search);
+  const searchId = params.get("s") || "default";
 
+  // Propagate ?s= in back link
+  const backLink = document.getElementById("backLink");
+  if (params.get("s")) backLink.href = `/?s=${encodeURIComponent(params.get("s"))}`;
+
+  // ── Check if returning volunteer already has a token ──
+  const storedToken = localStorage.getItem("esti-volunteer-token");
+  const storedId    = localStorage.getItem("esti-volunteer-id");
+  if (storedToken && storedId) {
+    document.getElementById("formState").style.display = "none";
+    document.getElementById("confirmState").classList.add("visible");
+    const storedName = localStorage.getItem("esti-volunteer-name") || "you";
+    document.getElementById("confirmTitle").textContent = `Welcome back, ${storedName.split(" ")[0]}!`;
+    startPolling(storedToken, storedId);
+  }
+
+  // ── Form submit ──
   document.getElementById("intakeForm").addEventListener("submit", async (e) => {
     e.preventDefault();
     const firstName = document.getElementById("firstName").value.trim();
@@ -152,32 +266,67 @@
         body: JSON.stringify({ firstName, lastName, phone, email, searchId }),
       });
       const data = await res.json();
-      if (!res.ok || !data.ok) {
-        throw new Error(data.error || "Server error");
-      }
-      showConfirm(firstName);
+      if (!res.ok || !data.ok) throw new Error(data.error || "Server error");
+
+      // Persist identity for polling and returning-user shortcut
+      const fullName = `${firstName} ${lastName}`.trim();
+      localStorage.setItem("esti-volunteer-id",    data.volunteerId);
+      localStorage.setItem("esti-volunteer-token",  data.token);
+      localStorage.setItem("esti-volunteer-name",   fullName);
+
+      showConfirm(firstName, data.token, data.volunteerId);
     } catch (err) {
       errorEl.textContent = err.message || "Could not check in. Check your connection and try again.";
       errorEl.className = "error-msg visible";
       btn.disabled = false;
-      btn.textContent = "I'm Here — Check In";
+      btn.textContent = "Check In →";
     }
   });
 
-  function showConfirm(firstName) {
-    const card = document.getElementById("card");
-    card.innerHTML = `
-      <div class="confirm-state">
-        <div class="confirm-icon"><svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="#16a34a" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><polyline points="8 12 11 15 16 9"/></svg></div>
-        <div class="confirm-title">You're in, ${escHtml(firstName)}!</div>
-        <div class="confirm-sub">Stand by. Dispatch will text you with your grid assignment and a tracking link.</div>
-        <div class="confirm-sub" style="font-weight:600;">Keep your phone on and charged.</div>
-      </div>
-    `;
+  function showConfirm(firstName, token, volunteerId) {
+    document.getElementById("formState").style.display = "none";
+    const confirm = document.getElementById("confirmState");
+    confirm.classList.add("visible");
+    document.getElementById("confirmTitle").textContent = `You're in, ${escHtml(firstName)}!`;
+    startPolling(token, volunteerId);
+  }
+
+  let pollTimer = null;
+
+  function startPolling(token, volunteerId) {
+    clearInterval(pollTimer);
+    checkAssignment(token, volunteerId);
+    pollTimer = setInterval(() => checkAssignment(token, volunteerId), 10000);
+  }
+
+  async function checkAssignment(token, volunteerId) {
+    try {
+      const s = searchId !== "default" ? `&s=${encodeURIComponent(searchId)}` : "";
+      const res = await fetch(`${BASE}/api/volunteer-status?token=${encodeURIComponent(token)}${s}`, {
+        signal: AbortSignal.timeout(6000),
+      });
+      if (!res.ok) return;
+      const data = await res.json();
+      if (data.assigned && data.cellId) {
+        clearInterval(pollTimer);
+        showAssigned(token, data.cellId, searchId);
+      }
+    } catch { /* silent — keep polling */ }
+  }
+
+  function showAssigned(token, cellId, sid) {
+    document.getElementById("waitingBlock").style.display = "none";
+    const assignedBlock = document.getElementById("assignedBlock");
+    assignedBlock.style.display = "flex";
+    document.getElementById("assignedCellBadge").textContent = `Grid ${cellId}`;
+    const mapUrl = `/v/${encodeURIComponent(token)}?s=${encodeURIComponent(sid)}`;
+    document.getElementById("openMapBtn").href = mapUrl;
   }
 
   function escHtml(s) {
-    return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+    return String(s)
+      .replace(/&/g,"&amp;").replace(/</g,"&lt;")
+      .replace(/>/g,"&gt;").replace(/"/g,"&quot;");
   }
 })();
 </script>

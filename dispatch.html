@@ -12,101 +12,184 @@
       background: #0f172a; color: #f1f5f9;
     }
 
+    /* ── Back link ── */
+    .back-link {
+      position: fixed; top: 16px; left: 16px;
+      display: flex; align-items: center; gap: 6px;
+      font-size: 13px; font-weight: 700; color: #64748b;
+      text-decoration: none; cursor: pointer;
+      transition: color 0.15s;
+    }
+    .back-link:hover { color: #94a3b8; }
+    .back-link svg { flex-shrink: 0; }
+
+    /* ── Layout ── */
     .page {
       min-height: 100dvh;
       display: flex; flex-direction: column;
       justify-content: center; align-items: center;
-      padding: 32px 16px;
+      padding: 64px 16px 32px;
     }
 
     .card {
-      width: 100%; max-width: 380px;
-      background: #1e293b; border-radius: 16px;
+      width: 100%; max-width: 360px;
+      background: #1e293b;
+      border-radius: 20px;
       border: 1px solid #334155;
-      box-shadow: 0 8px 32px rgba(0,0,0,0.4);
-      padding: 32px 28px;
-      display: flex; flex-direction: column; gap: 22px;
+      box-shadow: 0 12px 40px rgba(0,0,0,0.5);
+      padding: 28px 24px 24px;
+      display: flex; flex-direction: column; gap: 20px;
     }
 
+    /* ── Header ── */
     .card-header { text-align: center; }
     .card-badge {
       display: inline-block; background: #ef4444; color: #fff;
       font-size: 10px; font-weight: 800; text-transform: uppercase;
-      letter-spacing: 0.1em; border-radius: 4px; padding: 3px 8px;
+      letter-spacing: 0.12em; border-radius: 4px; padding: 3px 9px;
       margin-bottom: 10px;
     }
-    .card-title { font-size: 26px; font-weight: 900; color: #f8fafc; }
-    .card-sub { font-size: 13px; color: #94a3b8; margin-top: 6px; line-height: 1.4; }
+    .card-title { font-size: 24px; font-weight: 900; color: #f8fafc; }
+    .card-sub { font-size: 13px; color: #64748b; margin-top: 6px; line-height: 1.45; }
 
-    .form-grid { display: flex; flex-direction: column; gap: 14px; }
-    label { display: flex; flex-direction: column; gap: 5px; }
+    /* ── Search ID field ── */
+    .field { display: flex; flex-direction: column; gap: 5px; }
     .label-text {
-      font-size: 11px; font-weight: 700; text-transform: uppercase;
-      letter-spacing: 0.06em; color: #64748b;
+      font-size: 10px; font-weight: 700; text-transform: uppercase;
+      letter-spacing: 0.08em; color: #64748b;
     }
-    input[type="password"], input[type="text"] {
+    .hint { font-size: 11px; color: #475569; }
+    input[type="text"] {
       width: 100%; border: 1.5px solid #334155; border-radius: 9px;
-      padding: 13px 14px; font-size: 20px; letter-spacing: 0.18em;
+      padding: 12px 13px; font-size: 15px;
       color: #f1f5f9; background: #0f172a; outline: none;
       transition: border-color 0.15s;
     }
-    input:focus { border-color: #3b82f6; box-shadow: 0 0 0 3px rgba(59,130,246,0.18); }
+    input[type="text"]:focus { border-color: #3b82f6; box-shadow: 0 0 0 3px rgba(59,130,246,0.15); }
 
-    .submit-btn {
-      width: 100%; padding: 15px; background: #2563eb; color: #fff;
-      border: none; border-radius: 10px; font-size: 16px; font-weight: 700;
-      cursor: pointer; transition: background 0.15s;
+    /* ── PIN section ── */
+    .pin-label {
+      font-size: 10px; font-weight: 700; text-transform: uppercase;
+      letter-spacing: 0.08em; color: #64748b;
+      text-align: center;
     }
-    .submit-btn:hover { background: #1d4ed8; }
-    .submit-btn:disabled { background: #1e3a6a; cursor: not-allowed; }
 
+    .pin-dots {
+      display: flex; justify-content: center; gap: 14px;
+      padding: 4px 0;
+    }
+    .pin-dot {
+      width: 16px; height: 16px; border-radius: 50%;
+      background: #334155;
+      transition: background 0.12s, box-shadow 0.12s;
+    }
+    .pin-dot.filled { background: #3b82f6; box-shadow: 0 0 0 3px rgba(59,130,246,0.2); }
+    .pin-dot.error  { background: #ef4444; box-shadow: 0 0 0 3px rgba(239,68,68,0.2); }
+    .pin-dot.success{ background: #16a34a; box-shadow: 0 0 0 3px rgba(22,163,74,0.2); }
+
+    /* ── Numpad ── */
+    .numpad {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+    }
+    .np-btn {
+      height: 68px;
+      background: #0f172a;
+      border: 1.5px solid #334155;
+      border-radius: 12px;
+      color: #f1f5f9;
+      font-size: 22px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: background 0.1s, border-color 0.1s, transform 0.08s;
+      display: flex; align-items: center; justify-content: center;
+      -webkit-tap-highlight-color: transparent;
+      user-select: none;
+    }
+    .np-btn:hover  { background: #1e293b; border-color: #3b82f6; }
+    .np-btn:active { transform: scale(0.93); background: #253347; }
+    .np-btn.del    { font-size: 18px; color: #64748b; }
+    .np-btn.empty  { background: transparent; border-color: transparent; cursor: default; }
+    .np-btn.empty:hover  { background: transparent; border-color: transparent; }
+    .np-btn.empty:active { transform: none; }
+
+    /* ── Shake animation ── */
+    @keyframes shake {
+      0%,100% { transform: translateX(0); }
+      20%     { transform: translateX(-8px); }
+      40%     { transform: translateX(8px); }
+      60%     { transform: translateX(-6px); }
+      80%     { transform: translateX(6px); }
+    }
+    .shake { animation: shake 0.35s ease; }
+
+    /* ── Error ── */
     .error-msg {
-      background: rgba(239,68,68,0.15); color: #fca5a5; border-radius: 8px;
+      background: rgba(239,68,68,0.12); color: #fca5a5;
       border: 1px solid rgba(239,68,68,0.3);
-      padding: 10px 13px; font-size: 13px; font-weight: 600;
-      display: none;
+      border-radius: 8px; padding: 10px 13px;
+      font-size: 13px; font-weight: 600;
+      text-align: center; display: none;
     }
     .error-msg.visible { display: block; }
 
-    .search-id-row {
-      display: flex; flex-direction: column; gap: 5px;
-    }
-    .hint { font-size: 11px; color: #475569; }
-
-    .guide-link {
-      text-align: center;
-      font-size: 12px; color: #475569;
-    }
-    .guide-link a {
-      color: #60a5fa; text-decoration: none; font-weight: 600;
-    }
+    /* ── Guide link ── */
+    .guide-link { text-align: center; font-size: 12px; color: #475569; }
+    .guide-link a { color: #60a5fa; text-decoration: none; font-weight: 600; }
     .guide-link a:hover { text-decoration: underline; }
   </style>
 </head>
 <body>
+
+<a href="/" class="back-link" id="backLink">
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="15 18 9 12 15 6"/></svg>
+  Home
+</a>
+
 <div class="page">
   <div class="card">
     <div class="card-header">
       <span class="card-badge">Restricted</span>
       <div class="card-title">Dispatcher Access</div>
-      <div class="card-sub">Enter your PIN to open the command dashboard. Keep this page closed when not in use.</div>
+      <div class="card-sub">Enter your PIN to open the command dashboard.</div>
     </div>
 
-    <form id="dispatchForm" class="form-grid" novalidate>
-      <div class="search-id-row">
-        <label>
-          <span class="label-text">Search ID</span>
-          <input id="searchId" type="text" autocomplete="off" placeholder="e.g. abc1234xyz" spellcheck="false" />
-        </label>
-        <span class="hint">Leave blank to use the default operation.</span>
+    <div class="field">
+      <label class="label-text" for="searchId">Search Operation</label>
+      <input id="searchId" type="text" autocomplete="off" placeholder="Search ID (optional)" spellcheck="false" />
+      <span class="hint">Leave blank for the default operation.</span>
+    </div>
+
+    <div style="display:flex;flex-direction:column;gap:10px;">
+      <div class="pin-label">Enter PIN</div>
+      <div class="pin-dots" id="pinDots" aria-label="PIN entry progress">
+        <span class="pin-dot" data-i="0"></span>
+        <span class="pin-dot" data-i="1"></span>
+        <span class="pin-dot" data-i="2"></span>
+        <span class="pin-dot" data-i="3"></span>
       </div>
-      <label>
-        <span class="label-text">Dispatcher PIN</span>
-        <input id="pin" type="password" inputmode="numeric" autocomplete="off" placeholder="••••" />
-      </label>
-      <div id="errorMsg" class="error-msg"></div>
-      <button type="submit" class="submit-btn" id="submitBtn">Enter Dispatcher Mode</button>
-    </form>
+
+      <div class="numpad" id="numpad" role="group" aria-label="PIN numpad">
+        <button class="np-btn" data-digit="1" type="button">1</button>
+        <button class="np-btn" data-digit="2" type="button">2</button>
+        <button class="np-btn" data-digit="3" type="button">3</button>
+        <button class="np-btn" data-digit="4" type="button">4</button>
+        <button class="np-btn" data-digit="5" type="button">5</button>
+        <button class="np-btn" data-digit="6" type="button">6</button>
+        <button class="np-btn" data-digit="7" type="button">7</button>
+        <button class="np-btn" data-digit="8" type="button">8</button>
+        <button class="np-btn" data-digit="9" type="button">9</button>
+        <button class="np-btn empty" type="button" tabindex="-1" aria-hidden="true"></button>
+        <button class="np-btn" data-digit="0" type="button">0</button>
+        <button class="np-btn del" id="delBtn" type="button" aria-label="Delete last digit">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 4H8l-7 8 7 8h13a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2z"/><line x1="18" y1="9" x2="12" y2="15"/><line x1="12" y1="9" x2="18" y2="15"/></svg>
+        </button>
+      </div>
+    </div>
+
+    <div id="errorMsg" class="error-msg" role="alert"></div>
+
     <div class="guide-link">
       <a href="/docs/dispatch-guide.pdf" target="_blank">Dispatcher guide (PDF)</a>
     </div>
@@ -115,55 +198,109 @@
 
 <script>
 (function () {
-  // Pre-fill search ID from URL if provided (?s=...)
-  const params = new URLSearchParams(window.location.search);
-  const sParam = params.get("s");
+  const params   = new URLSearchParams(window.location.search);
+  const sParam   = params.get("s") || "";
   if (sParam) document.getElementById("searchId").value = sParam;
 
-  const CORRECT_PIN = "2468";
+  // Preserve ?s= in back link
+  const backLink = document.getElementById("backLink");
+  if (sParam) backLink.href = `/?s=${encodeURIComponent(sParam)}`;
 
-  document.getElementById("dispatchForm").addEventListener("submit", async (e) => {
-    e.preventDefault();
-    const pin      = document.getElementById("pin").value.trim();
-    const searchId = document.getElementById("searchId").value.trim();
-    const errorEl  = document.getElementById("errorMsg");
-    const btn      = document.getElementById("submitBtn");
+  let pin    = "";
+  let busy   = false;
+  const PIN_LENGTH = 4;
 
+  const dots   = document.querySelectorAll(".pin-dot");
+  const errorEl = document.getElementById("errorMsg");
+
+  function updateDots(state) {
+    dots.forEach((d, i) => {
+      d.className = "pin-dot";
+      if (state === "error")   { d.classList.add("error"); return; }
+      if (state === "success") { d.classList.add("success"); return; }
+      if (i < pin.length)      d.classList.add("filled");
+    });
+  }
+
+  function showError(msg) {
+    errorEl.textContent = msg;
+    errorEl.className = "error-msg visible";
+    updateDots("error");
+    const dotsEl = document.getElementById("pinDots");
+    dotsEl.classList.remove("shake");
+    void dotsEl.offsetWidth; // reflow
+    dotsEl.classList.add("shake");
+    setTimeout(() => {
+      pin = "";
+      updateDots();
+      busy = false;
+    }, 600);
+  }
+
+  async function submitPin() {
+    if (busy) return;
+    busy = true;
     errorEl.className = "error-msg";
 
-    if (!pin) {
-      errorEl.textContent = "Enter your dispatcher PIN.";
-      errorEl.className = "error-msg visible";
-      return;
-    }
+    const searchId = document.getElementById("searchId").value.trim();
 
-    if (pin !== CORRECT_PIN) {
-      errorEl.textContent = "Incorrect PIN.";
-      errorEl.className = "error-msg visible";
-      return;
-    }
-
-    btn.disabled = true;
-    btn.textContent = "Opening dashboard…";
-
-    // Try to fetch the positions key from the server (best-effort, never blocks login).
     try {
-      const res  = await fetch(`${window.location.origin}/api/dispatcher-auth`, {
+      const res = await fetch("/api/dispatcher-auth", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ pin }),
+        signal: AbortSignal.timeout(8000),
       });
       const data = await res.json();
-      if (data.ok && data.positionsKey) {
+
+      if (!res.ok || !data.ok) {
+        showError("Incorrect PIN. Try again.");
+        return;
+      }
+
+      // Correct — store session flags and redirect
+      if (data.positionsKey) {
         localStorage.setItem("esti-search-grid-positions-key", data.positionsKey);
       }
-    } catch { /* no server — positions key can be entered manually in dashboard */ }
+      localStorage.setItem("esti-dispatcher-autologin", "1");
+      localStorage.setItem("esti-dispatcher-pin-entry", pin);
 
-    localStorage.setItem("esti-dispatcher-autologin", "1");
-    localStorage.setItem("esti-dispatcher-pin-entry", pin);
+      updateDots("success");
+      const qs = searchId ? `?s=${encodeURIComponent(searchId)}` : "";
+      setTimeout(() => { window.location.href = `/dispatch${qs}`; }, 400);
 
-    const qs = searchId ? `?s=${encodeURIComponent(searchId)}` : "";
-    setTimeout(() => { window.location.href = `${window.location.origin}/dispatch${qs}`; }, 300);
+    } catch (err) {
+      const isTimeout = err.name === "TimeoutError" || err.name === "AbortError";
+      showError(isTimeout
+        ? "Cannot reach server. Check your connection."
+        : "Verification failed. Check your connection.");
+    }
+  }
+
+  function pressDigit(d) {
+    if (busy || pin.length >= PIN_LENGTH) return;
+    pin += d;
+    updateDots();
+    if (pin.length === PIN_LENGTH) submitPin();
+  }
+
+  function pressDelete() {
+    if (busy) return;
+    pin = pin.slice(0, -1);
+    updateDots();
+  }
+
+  // Numpad clicks
+  document.getElementById("numpad").addEventListener("click", (e) => {
+    const btn = e.target.closest("[data-digit]");
+    if (btn) pressDigit(btn.dataset.digit);
+  });
+  document.getElementById("delBtn").addEventListener("click", pressDelete);
+
+  // Physical keyboard support
+  document.addEventListener("keydown", (e) => {
+    if (e.key >= "0" && e.key <= "9") { pressDigit(e.key); return; }
+    if (e.key === "Backspace" || e.key === "Delete") pressDelete();
   });
 })();
 </script>

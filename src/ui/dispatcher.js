@@ -1,4 +1,4 @@
-import { DISPATCHER_PIN, SHARED_API_BASE, SEARCH_ID, POSITIONS_KEY_STORE, SEARCH_AREA, SEARCH_AREA_EXTENDED } from "../core/constants.js";
+import { SHARED_API_BASE, SEARCH_ID, POSITIONS_KEY_STORE, SEARCH_AREA, SEARCH_AREA_EXTENDED } from "../core/constants.js";
 import { state, saveState } from "../core/state.js";
 import { store } from "../core/store.js";
 import { addAudit } from "../core/audit.js";
@@ -349,30 +349,53 @@ export function bindDispatcherLogin() {
 export async function enterDispatcherMode(event) {
   event?.preventDefault();
   const pinInput = document.getElementById("dispatcherPin");
+  const submitBtn = document.getElementById("dispatcherSubmitBtn");
+  const error = document.getElementById("dispatcherLoginError");
   const pin = pinInput.value.trim();
-  if (pin !== DISPATCHER_PIN) {
-    addAudit("dispatcher_login_failed", null, {});
-    saveState();
-    const error = document.getElementById("dispatcherLoginError");
-    if (error) { error.textContent = "That PIN didn't match. Try again."; error.hidden = false; }
-    pinInput.value = "";
-    pinInput.focus();
+
+  if (!pin) {
+    if (error) { error.textContent = "Enter your dispatcher PIN."; error.hidden = false; }
     return;
   }
 
-  // Best-effort: fetch positions key from server so volunteer map unlocks automatically.
+  if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = "Verifying…"; }
+  if (error) error.hidden = true;
+
   try {
     const res = await fetch(`${window.location.origin}/api/dispatcher-auth`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ pin }),
+      signal: AbortSignal.timeout(8000),
     });
     const data = await res.json();
-    if (data.ok && data.positionsKey) {
+
+    if (!res.ok || !data.ok) {
+      addAudit("dispatcher_login_failed", null, {});
+      saveState();
+      if (error) { error.textContent = "Incorrect PIN. Try again."; error.hidden = false; }
+      pinInput.value = "";
+      pinInput.focus();
+      return;
+    }
+
+    if (data.positionsKey) {
       store.positionsKey = data.positionsKey;
       localStorage.setItem(POSITIONS_KEY_STORE, data.positionsKey);
     }
-  } catch { /* silent — positions key can be entered manually */ }
+  } catch (err) {
+    const isTimeout = err.name === "TimeoutError" || err.name === "AbortError";
+    if (error) {
+      error.textContent = isTimeout
+        ? "Cannot reach server. Check your connection."
+        : "Verification failed. Check your connection.";
+      error.hidden = false;
+    }
+    pinInput.focus();
+    return;
+  } finally {
+    if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = "Enter"; }
+  }
 
   store.dispatcherLoginOpen = false;
   state.profile.dispatcher = true;

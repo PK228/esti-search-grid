@@ -1,61 +1,277 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>ESTI — Emergency Search &amp; Tactical Intelligence</title>
-    <link
-      rel="stylesheet"
-      href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
-    />
-    <link rel="stylesheet" href="./styles.css" />
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@turf/turf@6/turf.min.js"></script>
-    <!-- app.js retained as fallback; active entry point is src/main.js -->
-    <script type="module" src="./src/main.js"></script>
-  </head>
-  <body>
-    <div class="app-shell">
-      <header class="topbar">
-        <div class="brand-block">
-          <p class="eyebrow">Keele to Yonge, Steeles to Eglinton</p>
-          <h1>ESTI</h1>
-          <span id="syncDot" class="sync-dot" title="Shared sync status"></span>
-        </div>
-        <div class="top-actions" aria-label="Map actions">
-          <button id="locateBtn" class="button primary" type="button">
-            Locate me
-          </button>
-          <button id="areaBtn" class="button" type="button">Area</button>
-          <button id="heatBtn" class="button" type="button">Heat</button>
-          <button id="hastyBtn" class="button" type="button">Hasty</button>
-          <button id="poiBtn" class="button" type="button">POIs</button>
-          <button id="zonesBtn" class="button" type="button">Zones</button>
-          <button id="dispatcherBtn" class="button" type="button">Dispatcher</button>
-          <button id="traceBtn" class="button" type="button">Trace boundary</button>
-          <button id="exportBtn" class="button" type="button">Export</button>
-          <button id="importBtn" class="button" type="button">Import</button>
-          <input id="importFile" type="file" accept="application/json" hidden />
-        </div>
-      </header>
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ESTI — Emergency Search &amp; Tactical Intelligence</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-      <div id="poiFilterBar" class="poi-filter-bar" hidden></div>
+    html, body {
+      height: 100%;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #0f172a;
+      color: #f1f5f9;
+    }
 
-      <a class="hotline-bar" href="tel:+16475576735">
-        <span class="hotline-label">Shomrim hotline</span>
-        <strong class="hotline-number">647.557.6735</strong>
-      </a>
+    .page {
+      min-height: 100dvh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 32px 20px 80px;
+      gap: 32px;
+    }
 
-      <main class="workspace">
-        <section class="map-stage" aria-label="Volunteer search map">
-          <div id="map"></div>
-          <div id="gpsStatus" class="gps-status">GPS idle</div>
-        </section>
+    /* ── Brand ── */
+    .brand { text-align: center; }
+    .brand-wordmark {
+      font-size: clamp(42px, 10vw, 72px);
+      font-weight: 900;
+      letter-spacing: 0.18em;
+      color: #f8fafc;
+      line-height: 1;
+    }
+    .brand-tagline {
+      margin-top: 8px;
+      font-size: 13px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      color: #64748b;
+    }
 
-        <aside id="panel" class="panel" aria-live="polite"></aside>
-      </main>
+    /* ── Operation status pill ── */
+    .op-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 999px;
+      padding: 8px 18px;
+      font-size: 13px;
+      font-weight: 700;
+      color: #94a3b8;
+    }
+    .op-pill.active { color: #f1f5f9; border-color: #16a34a; }
+    .op-dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: #334155;
+      flex-shrink: 0;
+    }
+    .op-pill.active .op-dot {
+      background: #16a34a;
+      box-shadow: 0 0 0 3px rgba(22,163,74,0.25);
+      animation: pulse 2s infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { box-shadow: 0 0 0 3px rgba(22,163,74,0.25); }
+      50%       { box-shadow: 0 0 0 6px rgba(22,163,74,0.08); }
+    }
+
+    /* ── Role cards ── */
+    .cards {
+      width: 100%;
+      max-width: 400px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    .role-card {
+      display: block;
+      width: 100%;
+      padding: 22px 24px;
+      background: #1e293b;
+      border: 1.5px solid #334155;
+      border-radius: 16px;
+      text-decoration: none;
+      color: inherit;
+      cursor: pointer;
+      transition: border-color 0.15s, background 0.15s, transform 0.1s;
+      -webkit-tap-highlight-color: transparent;
+      min-height: 88px;
+    }
+    .role-card:hover { background: #253347; }
+    .role-card:active { transform: scale(0.98); }
+
+    .role-card.volunteer  { border-color: #16a34a; }
+    .role-card.dispatcher { border-color: #2563eb; }
+    .role-card.volunteer:hover  { border-color: #22c55e; background: #162b1a; }
+    .role-card.dispatcher:hover { border-color: #3b82f6; background: #162040; }
+
+    .role-label {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      margin-bottom: 4px;
+    }
+    .role-card.volunteer  .role-label { color: #4ade80; }
+    .role-card.dispatcher .role-label { color: #60a5fa; }
+
+    .role-title {
+      font-size: 20px;
+      font-weight: 800;
+      color: #f8fafc;
+      line-height: 1.2;
+    }
+    .role-sub {
+      margin-top: 4px;
+      font-size: 13px;
+      color: #94a3b8;
+      line-height: 1.4;
+    }
+
+    .role-arrow {
+      float: right;
+      font-size: 20px;
+      color: #475569;
+      margin-top: -22px;
+    }
+
+    /* ── Returning volunteer chip ── */
+    .return-chip {
+      display: none;
+      align-items: center;
+      gap: 10px;
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 12px;
+      padding: 12px 16px;
+      width: 100%;
+      max-width: 400px;
+      cursor: pointer;
+      transition: background 0.15s;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .return-chip:hover { background: #253347; }
+    .return-chip.visible { display: flex; }
+    .return-chip-text { flex: 1; font-size: 14px; color: #94a3b8; }
+    .return-chip-name { font-weight: 700; color: #f1f5f9; }
+    .return-chip-cta {
+      font-size: 12px; font-weight: 700;
+      color: #4ade80; white-space: nowrap;
+    }
+
+    /* ── Hotline ── */
+    .hotline {
+      position: fixed;
+      bottom: 0; left: 0; right: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      min-height: 52px;
+      background: #c81e1e;
+      text-decoration: none;
+      color: #fff;
+      transition: background 0.15s;
+    }
+    .hotline:hover { background: #a81818; }
+    .hotline-label {
+      font-size: 11px; font-weight: 800;
+      text-transform: uppercase; letter-spacing: 0.1em;
+    }
+    .hotline-number { font-size: 17px; font-weight: 900; letter-spacing: 0.5px; }
+  </style>
+</head>
+<body>
+<div class="page">
+
+  <div class="brand">
+    <div class="brand-wordmark">ESTI</div>
+    <div class="brand-tagline">Emergency Search &amp; Tactical Intelligence</div>
+  </div>
+
+  <div id="opPill" class="op-pill">
+    <span class="op-dot"></span>
+    <span id="opLabel">Loading…</span>
+  </div>
+
+  <!-- Returning volunteer shortcut -->
+  <button id="returnChip" class="return-chip" type="button" aria-label="Continue as returning volunteer">
+    <div class="return-chip-text">
+      Continue as <span id="returnName" class="return-chip-name"></span>
     </div>
+    <span class="return-chip-cta">Resume &rarr;</span>
+  </button>
 
-    <div id="toast" class="toast" role="status" aria-live="polite"></div>
-  </body>
+  <div class="cards">
+    <a id="volunteerLink" href="/intake" class="role-card volunteer">
+      <div class="role-label">Searcher</div>
+      <div class="role-title">I'm a Volunteer</div>
+      <div class="role-sub">Join the search — check in and get assigned a grid.</div>
+      <span class="role-arrow" aria-hidden="true">›</span>
+    </a>
+
+    <a id="dispatchLink" href="/dispatch-login" class="role-card dispatcher">
+      <div class="role-label">Restricted</div>
+      <div class="role-title">Dispatcher Access</div>
+      <div class="role-sub">Command board — requires PIN authorisation.</div>
+      <span class="role-arrow" aria-hidden="true">›</span>
+    </a>
+  </div>
+
+</div>
+
+<a class="hotline" href="tel:+16475576735">
+  <span class="hotline-label">Shomrim hotline</span>
+  <strong class="hotline-number">647.557.6735</strong>
+</a>
+
+<script>
+(function () {
+  const params = new URLSearchParams(window.location.search);
+  const s = params.get("s") || "";
+  const qs = s ? `?s=${encodeURIComponent(s)}` : "";
+
+  // Propagate ?s= to both links
+  document.getElementById("volunteerLink").href = `/intake${qs}`;
+  document.getElementById("dispatchLink").href  = `/dispatch-login${qs}`;
+
+  // Returning volunteer shortcut
+  const volId   = localStorage.getItem("esti-volunteer-id");
+  const volName = localStorage.getItem("esti-volunteer-name");
+  const volToken = localStorage.getItem("esti-volunteer-token");
+  if (volId && volName && volToken) {
+    const chip = document.getElementById("returnChip");
+    const nameEl = document.getElementById("returnName");
+    nameEl.textContent = volName.split(" ")[0];
+    chip.classList.add("visible");
+    chip.addEventListener("click", () => {
+      const base = `/v/${encodeURIComponent(volToken)}`;
+      window.location.href = s ? `${base}?s=${encodeURIComponent(s)}` : base;
+    });
+  }
+
+  // Active operation status
+  const pill = document.getElementById("opPill");
+  const opLabel = document.getElementById("opLabel");
+
+  async function loadOpStatus() {
+    try {
+      const url = s ? `/api/searches?s=${encodeURIComponent(s)}` : "/api/searches";
+      const res = await fetch(url, { signal: AbortSignal.timeout(4000) });
+      if (!res.ok) throw new Error();
+      const data = await res.json();
+      const org = data.orgName || data.name || "";
+      if (org) {
+        opLabel.textContent = `Active: ${org}`;
+        pill.classList.add("active");
+      } else {
+        opLabel.textContent = "No active operation";
+      }
+    } catch {
+      opLabel.textContent = "No active operation";
+    }
+  }
+
+  loadOpStatus();
+})();
+</script>
+</body>
 </html>

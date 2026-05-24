@@ -2,7 +2,7 @@ import { state, ensureIdentity, saveState } from "./core/state.js";
 import { store } from "./core/store.js";
 import { startSharedSync } from "./core/sync.js";
 import { startPositionSync } from "./core/positions.js";
-import { HEARTBEAT_SCAN_MS, DISPATCHER_PIN, SEARCH_ID, SHARED_API_BASE } from "./core/constants.js";
+import { HEARTBEAT_SCAN_MS, SEARCH_ID, SHARED_API_BASE } from "./core/constants.js";
 import { addAudit } from "./core/audit.js";
 import { buildGrid, buildExtendedGrid } from "./grid/builder.js";
 import { scanStaleCells } from "./grid/cells.js";
@@ -222,10 +222,9 @@ function _initFromUrl() {
   if (window.location.pathname.startsWith("/dispatch")) {
     store.activeCellId = null;
 
-    // Auto-login from the standalone dispatch.html login page.
+    // Auto-login from the standalone dispatch-login page (server already validated the PIN).
     const autoFlag = localStorage.getItem("esti-dispatcher-autologin");
-    const savedPin = localStorage.getItem("esti-dispatcher-pin-entry");
-    if (autoFlag === "1" && savedPin && savedPin === DISPATCHER_PIN) {
+    if (autoFlag === "1") {
       localStorage.removeItem("esti-dispatcher-autologin");
       localStorage.removeItem("esti-dispatcher-pin-entry");
       state.profile.dispatcher = true;
@@ -233,7 +232,9 @@ function _initFromUrl() {
       addAudit("dispatcher_mode_enabled", null, {});
       saveState();
     } else if (!state.profile.dispatcher) {
-      store.dispatcherLoginOpen = true;
+      // Not authenticated — send to login page.
+      window.location.replace("/dispatch-login" + window.location.search);
+      return;
     }
   } else if (state.profile.dispatcher) {
     // Already logged in as dispatcher but URL didn't say /dispatch — sync it.

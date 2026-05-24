@@ -9,7 +9,8 @@ import {
 
 export function buildGrid() {
   store.cellLookup.clear();
-  store.cellFeatures = buildPrimaryCellFeatures(SEARCH_AREA.boundary);
+  const boundary = state.search?.boundary || SEARCH_AREA.boundary;
+  store.cellFeatures = buildPrimaryCellFeatures(boundary);
   store.cellFeatures.forEach((feature) => {
     store.cellLookup.set(feature.properties.id, feature);
   });

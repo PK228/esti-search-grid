@@ -1,8 +1,6 @@
 const crypto = require("crypto");
 
-// Per-token rate limiting (in-memory; resets on cold start, good enough for abuse prevention)
-const lastPingAt = new Map();
-const RATE_LIMIT_MS = 15 * 1000;
+const RATE_LIMIT_SECONDS = 15;
 const IDLE_MS = 30 * 60 * 1000;
 const MAX_POSITIONS = 600;
 
@@ -45,6 +43,25 @@ async function redisSet(key, value) {
     body: JSON.stringify(value),
   });
   if (!res.ok) throw new Error(`Redis set failed: ${res.status}`);
+}
+
+// Returns true if the caller is allowed (key was newly set), false if rate-limited (key already existed).
+// Fails open (returns true) if Redis is unavailable.
+async function redisRateLimitNX(key, ttlSeconds) {
+  const { url, token } = getRedisConfig();
+  if (!url || !token) return true;
+  try {
+    const res = await fetch(`${url}/set/${encodeURIComponent(key)}?ex=${ttlSeconds}&nx=`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify("1"),
+    });
+    if (!res.ok) return true;
+    const payload = await res.json();
+    return payload.result === "OK";
+  } catch {
+    return true;
+  }
 }
 
 async function readBody(req) {
@@ -182,14 +199,12 @@ module.exports = async function handler(req, res) {
           json(res, 400, { ok: false, error: "Invalid lng" }); return;
         }
 
-        // Rate-limit per volunteer id
-        const now = Date.now();
-        const last = lastPingAt.get(volunteer.id) || 0;
-        if (now - last < RATE_LIMIT_MS) {
+        // Rate-limit per volunteer using Redis NX TTL (survives cold starts)
+        const allowed = await redisRateLimitNX(`esti:ratelimit:${volunteer.id}`, RATE_LIMIT_SECONDS);
+        if (!allowed) {
           json(res, 429, { ok: false, error: "Too many pings" }); return;
         }
-        lastPingAt.set(volunteer.id, now);
-
+        const now = Date.now();
         const accuracy = Number(payload.accuracy);
         const pKey = positionsKey(searchId);
         const positions = prune(await redisGet(pKey));

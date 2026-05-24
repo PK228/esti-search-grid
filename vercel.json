@@ -2,6 +2,8 @@
   "rewrites": [
     { "source": "/v/:token", "destination": "/v.html" },
     { "source": "/intake", "destination": "/intake.html" },
-    { "source": "/dispatch", "destination": "/index.html" }
+    { "source": "/dispatch", "destination": "/index.html" },
+    { "source": "/docs/volunteer-guide.pdf", "destination": "/docs/volunteer-guide.html" },
+    { "source": "/docs/dispatch-guide.pdf", "destination": "/docs/dispatch-guide.html" }
   ]
 }

@@ -9,7 +9,7 @@ import {
   updateCell, sendHeartbeat, releaseCell, clearCell, scanStaleCells,
 } from "../grid/cells.js";
 import { getOpenIncidentForGrid, resolveIncidentForGrid } from "../grid/incidents.js";
-import { renderDispatcherDashboard, renderDispatcherLogin, bindDispatcherLogin, loadVolunteerQueue, bindVolunteerQueueActions } from "./dispatcher.js";
+import { renderDispatcherDashboard, renderDispatcherLogin, bindDispatcherLogin, loadVolunteerQueue, bindVolunteerQueueActions, bindDispatcherDashboard } from "./dispatcher.js";
 import { renderZonePanel, renderZoneDetail, bindZonePanel, bindZoneDetail } from "./zone-panel.js";
 import { exportState, exportAudit } from "../utils/export.js";
 import { togglePlaceLastSeen, removeLastSeen, clearLastSeenTrail, geocodeLastSeen, saveLastSeenDetails, handleLastSeenPhoto, renderClueMarkers } from "./map.js";
@@ -48,6 +48,7 @@ export function renderPanel() {
     panel.innerHTML = renderCommandPanel();
     bindCommandPanel();
     if (state.profile.dispatcher) {
+      bindDispatcherDashboard();
       bindVolunteerQueueActions();
       loadVolunteerQueue();
     }
@@ -83,7 +84,7 @@ function renderCommandPanel() {
     const analytics = getAnalytics(counts);
     return `
       <h2>Command Board</h2>
-      <p class="muted tight">${store.cellFeatures.length} grid squares, 0.5 km each. Grid updates sync across phones.</p>
+      <p class="muted tight">${store.cellFeatures.length} grid squares, ${state.search?.gridCellKm || 0.5} km each. Grid updates sync across phones.</p>
       <p class="sync-line ${store.sharedSyncStatus === "live" ? "live" : "offline"}">Shared sync: ${escapeHtml(store.sharedSyncStatus)}</p>
       <div class="summary-grid">
         ${summaryItem(counts.open, "Open")}

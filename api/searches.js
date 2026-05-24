@@ -53,6 +53,29 @@ function sanitizeString(value, maxLen) {
   return value.trim().slice(0, maxLen);
 }
 
+function sanitizeCellKm(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n) || n < 0.1 || n > 5) return 0.5;
+  return Math.round(n * 100) / 100;
+}
+
+function sanitizeBoundary(input) {
+  if (!Array.isArray(input) || input.length < 4) return null;
+  const points = input.slice(0, 250).map((pt) => {
+    if (!Array.isArray(pt) || pt.length < 2) return null;
+    const lng = Number(pt[0]);
+    const lat = Number(pt[1]);
+    if (!Number.isFinite(lng) || lng < -180 || lng > 180) return null;
+    if (!Number.isFinite(lat) || lat < -90 || lat > 90) return null;
+    return [Math.round(lng * 100000) / 100000, Math.round(lat * 100000) / 100000];
+  }).filter(Boolean);
+  if (points.length < 4) return null;
+  const first = points[0];
+  const last = points[points.length - 1];
+  if (first[0] !== last[0] || first[1] !== last[1]) points.push([...first]);
+  return points;
+}
+
 async function readBody(req) {
   if (req.body) {
     return typeof req.body === "string" ? req.body : JSON.stringify(req.body);
@@ -80,6 +103,8 @@ module.exports = async function handler(req, res) {
     const orgName = sanitizeString(body.orgName, 120);
     const orgCity = sanitizeString(body.orgCity, 80);
     const label = sanitizeString(body.label, 200);
+    const cellKm = sanitizeCellKm(body.cellKm);
+    const boundary = sanitizeBoundary(body.boundary);
 
     const searchId = makeSearchId();
     const now = new Date().toISOString();
@@ -91,6 +116,8 @@ module.exports = async function handler(req, res) {
       label,
       createdAt: now,
       active: true,
+      ...(boundary ? { boundary } : {}),
+      cellKm,
     };
 
     const initialState = {

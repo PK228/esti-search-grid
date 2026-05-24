@@ -1,4 +1,4 @@
-import { DISPATCHER_PIN, SHARED_API_BASE, SEARCH_ID, POSITIONS_KEY_STORE } from "../core/constants.js";
+import { DISPATCHER_PIN, SHARED_API_BASE, SEARCH_ID, POSITIONS_KEY_STORE, SEARCH_AREA, SEARCH_AREA_EXTENDED } from "../core/constants.js";
 import { state, saveState } from "../core/state.js";
 import { store } from "../core/store.js";
 import { addAudit } from "../core/audit.js";
@@ -24,6 +24,7 @@ export function renderDispatcherDashboard() {
       <div class="divider"></div>
       <h3>Dispatcher</h3>
       <p class="notice success"><strong>Dispatcher mode active.</strong> Use the top button to exit dispatch mode.</p>
+      ${renderSearchControl()}
       ${renderLocationKeyControl()}
       ${renderLastSeenControl()}
       <div class="button-row">
@@ -454,4 +455,118 @@ function dashboardList(label, cells) {
 
 function _humanAction(actionType) {
   return actionType.replaceAll("_", " ");
+}
+
+function renderSearchControl() {
+  const searchName = state.search?.label || state.search?.orgName || (SEARCH_ID ? `Search ${SEARCH_ID}` : "Default operation");
+  return `
+    <div class="search-control">
+      <div class="search-control-header">
+        <span class="label-text">Active Search</span>
+        <strong class="search-control-name">${escapeHtml(searchName)}</strong>
+        ${SEARCH_ID ? `<span class="search-id-chip">${escapeHtml(SEARCH_ID)}</span>` : ""}
+      </div>
+      <div class="search-control-actions">
+        <button id="switchSearchBtn" class="button small" type="button">Switch search</button>
+        <button id="newSearchBtn" class="button small primary" type="button">+ New search</button>
+      </div>
+      <div id="searchSwitcherPanel" hidden></div>
+      <div id="newSearchPanel" hidden>${renderNewSearchForm()}</div>
+    </div>
+  `;
+}
+
+function renderNewSearchForm() {
+  return `
+    <form id="newSearchForm" class="new-search-form">
+      <h4>Create New Search</h4>
+      <label>Organization name
+        <input id="nsOrgName" type="text" placeholder="e.g. Shomrim Toronto" autocomplete="off" />
+      </label>
+      <label>Search label / location
+        <input id="nsLabel" type="text" placeholder="e.g. Bathurst & Wilson area" autocomplete="off" />
+      </label>
+      <label>Search area
+        <select id="nsBoundary">
+          <option value="primary">Toronto Primary (Keele / Yonge / Steeles / Eglinton)</option>
+          <option value="extended">Toronto Extended (DVP / Hwy 400 / Bloor / Hwy 407)</option>
+        </select>
+      </label>
+      <div class="button-row">
+        <button type="submit" class="button primary" id="nsSubmitBtn">Create & Switch</button>
+        <button type="button" class="button" id="nsCancelBtn">Cancel</button>
+      </div>
+      <p id="nsError" class="notice danger" hidden></p>
+    </form>
+  `;
+}
+
+export function bindDispatcherDashboard() {
+  const switchBtn = document.getElementById("switchSearchBtn");
+  const newBtn = document.getElementById("newSearchBtn");
+  const switchPanel = document.getElementById("searchSwitcherPanel");
+  const newPanel = document.getElementById("newSearchPanel");
+
+  switchBtn?.addEventListener("click", async () => {
+    const isOpen = !switchPanel.hidden;
+    if (isOpen) { switchPanel.hidden = true; return; }
+    newPanel.hidden = true;
+    switchPanel.innerHTML = '<p class="muted">Loading searches…</p>';
+    switchPanel.hidden = false;
+    try {
+      const res = await fetch(`${SHARED_API_BASE}/api/searches-list`, { cache: "no-store" });
+      const data = await res.json();
+      const searches = Array.isArray(data.searches) ? data.searches : [];
+      if (!searches.length) { switchPanel.innerHTML = '<p class="muted">No other searches found.</p>'; return; }
+      switchPanel.innerHTML = `
+        <select id="searchSelectList" class="search-select">
+          ${searches.map((s) => `<option value="${escapeAttr(s.searchId)}" ${s.searchId === SEARCH_ID ? "selected" : ""}>${escapeHtml(s.label || s.orgName || s.searchId)} <small>${escapeAttr(s.searchId)}</small></option>`).join("")}
+        </select>
+        <button id="goToSearchBtn" class="button primary small" type="button">Go</button>
+      `;
+      document.getElementById("goToSearchBtn")?.addEventListener("click", () => {
+        const sel = document.getElementById("searchSelectList");
+        const id = sel?.value;
+        if (id) window.location.href = `/?s=${encodeURIComponent(id)}`;
+      });
+    } catch {
+      switchPanel.innerHTML = '<p class="muted">Could not load searches.</p>';
+    }
+  });
+
+  newBtn?.addEventListener("click", () => {
+    switchPanel.hidden = true;
+    newPanel.hidden = !newPanel.hidden;
+  });
+
+  document.getElementById("nsCancelBtn")?.addEventListener("click", () => { newPanel.hidden = true; });
+
+  document.getElementById("newSearchForm")?.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const btn = document.getElementById("nsSubmitBtn");
+    const errEl = document.getElementById("nsError");
+    const orgName = document.getElementById("nsOrgName")?.value.trim() || "";
+    const label = document.getElementById("nsLabel")?.value.trim() || "";
+    const boundaryChoice = document.getElementById("nsBoundary")?.value;
+    const boundary = boundaryChoice === "extended" ? SEARCH_AREA_EXTENDED.boundary : SEARCH_AREA.boundary;
+
+    btn.disabled = true;
+    btn.textContent = "Creating…";
+    errEl.hidden = true;
+    try {
+      const res = await fetch(`${SHARED_API_BASE}/api/searches`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ orgName, label, boundary, cellKm: 0.5 }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.ok) throw new Error(data.error || "Create failed");
+      window.location.href = `/?s=${encodeURIComponent(data.searchId)}`;
+    } catch (err) {
+      errEl.textContent = err.message || "Could not create search.";
+      errEl.hidden = false;
+      btn.disabled = false;
+      btn.textContent = "Create & Switch";
+    }
+  });
 }

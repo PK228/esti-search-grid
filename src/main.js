@@ -2,7 +2,7 @@ import { state, ensureIdentity, saveState } from "./core/state.js";
 import { store } from "./core/store.js";
 import { startSharedSync } from "./core/sync.js";
 import { startPositionSync } from "./core/positions.js";
-import { HEARTBEAT_SCAN_MS, DISPATCHER_PIN } from "./core/constants.js";
+import { HEARTBEAT_SCAN_MS, DISPATCHER_PIN, SEARCH_ID, SHARED_API_BASE } from "./core/constants.js";
 import { addAudit } from "./core/audit.js";
 import { buildGrid, buildExtendedGrid } from "./grid/builder.js";
 import { scanStaleCells } from "./grid/cells.js";
@@ -20,7 +20,25 @@ if ("serviceWorker" in navigator) {
 
 document.addEventListener("DOMContentLoaded", init);
 
-function init() {
+async function _loadSearchMeta() {
+  if (!SEARCH_ID) return;
+  try {
+    const res = await fetch(`${SHARED_API_BASE}/api/search-meta?s=${encodeURIComponent(SEARCH_ID)}`, { cache: "no-store" });
+    if (!res.ok) return;
+    const { meta } = await res.json();
+    if (!meta) return;
+    if (meta.orgName) state.search.orgName = meta.orgName;
+    if (meta.orgCity) state.search.orgCity = meta.orgCity;
+    if (meta.label) state.search.label = meta.label;
+    if (Array.isArray(meta.boundary) && meta.boundary.length >= 4) state.search.boundary = meta.boundary;
+    if (meta.cellKm) state.search.gridCellKm = meta.cellKm;
+    // Update topbar eyebrow to reflect the active search label
+    const eyebrow = document.querySelector(".eyebrow");
+    if (eyebrow) eyebrow.textContent = meta.label || meta.orgName || "Active search";
+  } catch { /* non-critical — fall back to default area */ }
+}
+
+async function init() {
   if (!window.L || !window.turf) {
     document.body.innerHTML =
       '<main class="panel"><h1>Map failed to load</h1><p class="muted">Check the internet connection and refresh this page.</p></main>';
@@ -29,6 +47,7 @@ function init() {
 
   ensureIdentity();
   _initFromUrl();
+  await _loadSearchMeta();
   buildGrid();
   buildExtendedGrid();
   scanStaleCells({ silent: true });

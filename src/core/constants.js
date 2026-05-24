@@ -1,5 +1,9 @@
-export const STORAGE_KEY = "toronto-search-grid-v2";
-export const LEGACY_STORAGE_KEY = "toronto-search-grid-v1";
+// Read ?s= early so STORAGE_KEY can be namespaced per-search.
+const _urlParams = new URLSearchParams(window.location.search);
+export const SEARCH_ID = _urlParams.get("s") || null;
+
+export const STORAGE_KEY = `esti-grid-${SEARCH_ID || "default"}`;
+export const LEGACY_STORAGE_KEY = "toronto-search-grid-v2";
 export const SESSION_KEY = "toronto-search-grid-session";
 export const SESSION_STARTED_KEY = "toronto-search-grid-session-started";
 export const POSITIONS_KEY_STORE = "esti-search-grid-positions-key";
@@ -19,10 +23,6 @@ export const POSITION_SYNC_MS = 30 * 1000;
 export const POSITION_FRESH_MS = 60 * 1000;
 export const POSITION_STALE_MS = 5 * 60 * 1000;
 export const POSITION_IDLE_MS = 30 * 60 * 1000;
-
-// Read ?s= from URL for multi-tenant search routing.
-const _urlParams = new URLSearchParams(window.location.search);
-export const SEARCH_ID = _urlParams.get("s") || null;
 
 export const SEARCH_AREA = {
   name: "Keele / Yonge / Steeles / Eglinton",

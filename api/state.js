@@ -264,12 +264,7 @@ module.exports = async function handler(req, res) {
     if (req.method === "GET") {
       const searchId = req.query?.s || null;
       const key = stateKey(searchId);
-      let state = await redisGet(key);
-      // If nothing found under the specific key, fall back to the legacy key so
-      // volunteer pages can read state saved by a dispatcher with no search ID set.
-      if (!state && key !== LEGACY_STATE_KEY) {
-        state = await redisGet(LEGACY_STATE_KEY);
-      }
+      const state = await redisGet(key);
       json(res, 200, { ok: true, state: state || sanitizeState({}) });
       return;
     }

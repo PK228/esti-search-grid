@@ -44,12 +44,38 @@
     /* --- Map fills remaining space --- */
     #map { flex: 1; min-height: 0; z-index: 0; background: #e2e8f0; }
 
-    /* --- Bottom panel (scrollable controls) --- */
+    /* --- Bottom panel (collapsible) --- */
     .bottom-panel {
-      flex: 0 0 44vh; overflow-y: scroll; -webkit-overflow-scrolling: touch;
-      overscroll-behavior: contain;
-      padding: 14px 16px 40px; display: flex; flex-direction: column; gap: 12px;
+      flex-shrink: 0;
+      display: flex; flex-direction: column;
       background: #f8fafc; border-top: 1px solid #e2e8f0;
+      overflow: hidden;
+      max-height: 48vh;
+      transition: max-height 0.28s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    .bottom-panel.collapsed { max-height: 30px; }
+
+    /* drag handle */
+    .panel-handle {
+      flex-shrink: 0;
+      display: flex; align-items: center; justify-content: center;
+      width: 100%; height: 30px; border: none;
+      background: #f1f5f9; border-bottom: 1px solid #e2e8f0;
+      cursor: pointer; touch-action: manipulation;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .panel-handle:active { background: #e2e8f0; }
+    .panel-handle-pill {
+      width: 36px; height: 4px; border-radius: 2px; background: #cbd5e1;
+      transition: background 0.15s;
+    }
+    .bottom-panel.collapsed .panel-handle-pill { background: #94a3b8; }
+
+    /* scrollable content area */
+    .panel-scroll {
+      flex: 1; overflow-y: scroll; -webkit-overflow-scrolling: touch;
+      overscroll-behavior: contain;
+      padding: 14px 16px 40px; display: flex; flex-direction: column; gap: 16px;
     }
 
     /* --- GPS status bar --- */
@@ -197,7 +223,12 @@
     <div class="header-left"><div class="loading">Loading…</div></div>
   </div>
   <div id="map"></div>
-  <div class="bottom-panel" id="body-content"></div>
+  <div class="bottom-panel" id="bottomPanel">
+    <button class="panel-handle" id="panelToggle" aria-expanded="true" aria-label="Toggle details panel">
+      <span class="panel-handle-pill"></span>
+    </button>
+    <div class="panel-scroll" id="body-content"></div>
+  </div>
 </div>
 
 <script type="module">
@@ -781,6 +812,17 @@ import { buildSearchCellFeatures } from "/src/grid/features.js";
       renderError("Could not load your assignment. Check your connection and reload.");
     }
   }
+
+  // Panel collapse/expand toggle
+  (function () {
+    const panel = document.getElementById("bottomPanel");
+    const toggle = document.getElementById("panelToggle");
+    if (!panel || !toggle) return;
+    toggle.addEventListener("click", () => {
+      const collapsed = panel.classList.toggle("collapsed");
+      toggle.setAttribute("aria-expanded", String(!collapsed));
+    });
+  })();
 
   boot();
 })();

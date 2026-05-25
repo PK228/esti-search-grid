@@ -51,6 +51,12 @@ export function updateCell(id, status) {
     nextStatus = status;
   }
 
+  const _history = Array.isArray(existing.history) ? [...existing.history] : [];
+  if (nextStatus !== previousStatus) {
+    _history.push({ status: nextStatus, timestamp: now, byName: actorFields.name || state.profile.name || "Volunteer" });
+    if (_history.length > 40) _history.splice(0, _history.length - 40);
+  }
+
   state.cells[id] = {
     ...existing,
     id,
@@ -70,6 +76,7 @@ export function updateCell(id, status) {
       nextStatus === "searching" ? latestHeartbeatOf(searchers) || now : existing.lastHeartbeatAt || "",
     lastActionBy: currentActor(),
     lastReleaseReason: "",
+    history: _history,
   };
 
   if (nextStatus === "searching" && previousStatus === "stale") {
@@ -172,6 +179,10 @@ export function releaseCell(id, reason) {
     }
   }
 
+  const _releaseHistory = Array.isArray(cell.history) ? [...cell.history] : [];
+  _releaseHistory.push({ status: "stale", timestamp: now, byName: state.profile.name || "Dispatcher" });
+  if (_releaseHistory.length > 40) _releaseHistory.splice(0, _releaseHistory.length - 40);
+
   state.cells[id] = {
     ...cell,
     searchers: [],
@@ -180,6 +191,7 @@ export function releaseCell(id, reason) {
     staleReleasedAt: now,
     lastReleaseReason: reason,
     lastActionBy: currentActor(),
+    history: _releaseHistory,
   };
   addAudit(reason, id, { previousStatus, releasedSearchers: ownerSnapshot(cell) });
   saveState();
@@ -215,6 +227,9 @@ export function scanStaleCells(options = {}) {
       };
       addAudit("stale_searcher_removed", id, { removed: searchers.length - fresh.length, searcherCount: fresh.length }, systemActor());
     } else {
+      const _staleHistory = Array.isArray(cell.history) ? [...cell.history] : [];
+      _staleHistory.push({ status: "stale", timestamp: now.toISOString(), byName: "Auto-release" });
+      if (_staleHistory.length > 40) _staleHistory.splice(0, _staleHistory.length - 40);
       state.cells[id] = {
         ...cell,
         searchers: [],
@@ -223,6 +238,7 @@ export function scanStaleCells(options = {}) {
         staleReleasedAt: now.toISOString(),
         lastReleaseReason: `No heartbeat for ${STALE_AFTER_MINUTES} minutes`,
         lastActionBy: systemActor(),
+        history: _staleHistory,
       };
       addAudit("auto_release_stale", id, { previousStatus, releasedSearchers: ownerSnapshot(cell) }, systemActor());
       released += 1;

@@ -1,5 +1,5 @@
 const LEGACY_POSITIONS_KEY = "esti-search-grid:positions:v1";
-const IDLE_MS = 10 * 60 * 1000;
+const IDLE_MS = 30 * 60 * 1000;
 const MAX_POSITIONS = 600;
 
 function positionsKey(searchId) {
@@ -74,8 +74,8 @@ async function redisSet(key, value) {
   }
 }
 
-// Volunteers idle longer than IDLE_MS are dropped, so a phone that stops
-// sharing fades off every map within ten minutes.
+// Volunteers idle longer than IDLE_MS are dropped, matching the dispatcher UI's
+// 30-minute stale/offline window.
 function prune(map) {
   const now = Date.now();
   const fresh = {};

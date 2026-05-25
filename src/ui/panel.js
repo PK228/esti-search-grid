@@ -9,7 +9,7 @@ import {
   updateCell, sendHeartbeat, releaseCell, clearCell, scanStaleCells,
 } from "../grid/cells.js";
 import { getOpenIncidentForGrid, resolveIncidentForGrid } from "../grid/incidents.js";
-import { renderDispatcherDashboard, renderDispatcherLogin, bindDispatcherLogin, loadVolunteerQueue, bindVolunteerQueueActions, bindDispatcherDashboard } from "./dispatcher.js";
+import { renderDispatcherDashboard, renderDispatcherLogin, bindDispatcherLogin, loadVolunteerQueue, bindVolunteerQueueActions, bindDispatcherDashboard, renderQueueTab, getVolunteerCount } from "./dispatcher.js";
 import { renderZonePanel, renderZoneDetail, bindZonePanel, bindZoneDetail } from "./zone-panel.js";
 import { exportState, exportAudit } from "../utils/export.js";
 import { togglePlaceLastSeen, removeLastSeen, clearLastSeenTrail, geocodeLastSeen, saveLastSeenDetails, handleLastSeenPhoto, renderClueMarkers } from "./map.js";
@@ -21,13 +21,92 @@ import { showToast } from "../utils/toast.js";
 
 export { getCellsByStatus }; // re-export so dispatcher.js stays clean
 
+function _renderPanelTabBar(activeTab) {
+  const count = getVolunteerCount();
+  const badge = count > 0 ? `<span class="panel-tab-badge">${count}</span>` : "";
+  return `
+    <div class="panel-tabs" id="panelTabBar">
+      <button class="panel-tab${activeTab === "command" ? " active" : ""}" data-tab="command" type="button">Command</button>
+      <button class="panel-tab${activeTab === "queue" ? " active" : ""}" data-tab="queue" type="button">Queue${badge}</button>
+      <button class="panel-tab${activeTab === "zones" ? " active" : ""}" data-tab="zones" type="button">Zones</button>
+    </div>`;
+}
+
+function _bindPanelTabs() {
+  const tabBar = document.getElementById("panelTabBar");
+  if (!tabBar) return;
+  tabBar.addEventListener("click", (e) => {
+    const btn = e.target.closest("[data-tab]");
+    if (!btn) return;
+    const newTab = btn.dataset.tab;
+    if (newTab === store.panelTab) return;
+    store.panelTab = newTab;
+    store.zonePanelOpen = (newTab === "zones");
+    if (newTab === "zones") {
+      store.activeCellId = null;
+      store.activeZoneId = null;
+      store.dispatcherLoginOpen = false;
+    }
+    document.dispatchEvent(new CustomEvent("esti:mode-buttons-changed"));
+    renderPanel();
+  });
+}
+
 export function renderPanel() {
   const panel = document.getElementById("panel");
+
+  // Dispatcher login screen
   if (store.dispatcherLoginOpen && !state.profile.dispatcher) {
     panel.innerHTML = renderDispatcherLogin();
     bindDispatcherLogin();
     return;
   }
+
+  // Cell detail takes priority over tabs
+  if (store.activeCellId) {
+    panel.innerHTML = renderCellPanel(store.activeCellId);
+    bindCellPanel(store.activeCellId);
+    return;
+  }
+
+  // Dispatcher: tab bar layout
+  if (state.profile.dispatcher) {
+    const tab = store.panelTab || "command";
+    store.zonePanelOpen = (tab === "zones");
+
+    let content = "";
+    if (tab === "zones") {
+      try {
+        content = store.activeZoneId ? renderZoneDetail(store.activeZoneId) : renderZonePanel();
+      } catch (err) {
+        content = `<p class="notice danger"><strong>Zone panel error:</strong> ${escapeHtml(String(err))}</p><button id="zoneErrBack" class="button" type="button">Back</button>`;
+        console.error("Zone panel error:", err);
+      }
+    } else if (tab === "queue") {
+      content = renderQueueTab();
+    } else {
+      content = renderCommandPanel();
+    }
+
+    panel.innerHTML = _renderPanelTabBar(tab) + content;
+    _bindPanelTabs();
+
+    if (tab === "zones") {
+      if (store.activeZoneId) bindZoneDetail(store.activeZoneId, _openZoneList);
+      else bindZonePanel(_openZoneDetail, _closeZonePanel);
+      document.getElementById("zoneErrBack")?.addEventListener("click", _closeZonePanel);
+    } else if (tab === "queue") {
+      loadVolunteerQueue();
+      bindVolunteerQueueActions();
+    } else {
+      bindCommandPanel();
+      bindDispatcherDashboard();
+      loadVolunteerQueue(); // keep cache warm so badge shows correct count
+    }
+    return;
+  }
+
+  // Non-dispatcher: zone panel or default
   if (store.zonePanelOpen) {
     try {
       if (store.activeZoneId) {
@@ -44,18 +123,9 @@ export function renderPanel() {
     }
     return;
   }
-  if (!store.activeCellId) {
-    panel.innerHTML = renderCommandPanel();
-    bindCommandPanel();
-    if (state.profile.dispatcher) {
-      bindDispatcherDashboard();
-      bindVolunteerQueueActions();
-      loadVolunteerQueue();
-    }
-    return;
-  }
-  panel.innerHTML = renderCellPanel(store.activeCellId);
-  bindCellPanel(store.activeCellId);
+
+  panel.innerHTML = renderCommandPanel();
+  bindCommandPanel();
 }
 
 function _openZoneDetail(id) {
@@ -71,6 +141,7 @@ function _openZoneList() {
 function _closeZonePanel() {
   store.zonePanelOpen = false;
   store.activeZoneId = null;
+  store.panelTab = "command";
   renderPanel();
   document.dispatchEvent(new CustomEvent("esti:mode-buttons-changed"));
 }
@@ -162,15 +233,19 @@ function renderCellPanel(id) {
 
     ${renderCellClues(id)}
 
-    <h3>Status</h3>
-    <div class="status-grid">
-      <button class="button primary" data-status="searching" type="button">Currently searching</button>
-      <button class="button success" data-status="done" type="button">Search complete</button>
-      <button class="button" data-status="stopped" type="button">Stopped</button>
-      <button class="button warning" data-status="backup" type="button">Need backup</button>
-      <button class="button danger" data-status="emergency" type="button">Emergency</button>
-      <button class="button found" data-status="found" type="button">Found subject</button>
-    </div>
+    ${state.profile.dispatcher ? _renderCellHistory(entry) : ""}
+
+    <details class="status-dropdown" id="statusDropdown">
+      <summary class="status-dropdown-toggle">Update status <span class="status-dropdown-chevron">▾</span></summary>
+      <div class="status-grid">
+        <button class="button primary" data-status="searching" type="button">Currently searching</button>
+        <button class="button success" data-status="done" type="button">Search complete</button>
+        <button class="button" data-status="stopped" type="button">Stopped</button>
+        <button class="button warning" data-status="backup" type="button">Need backup</button>
+        <button class="button danger" data-status="emergency" type="button">Emergency</button>
+        <button class="button found" data-status="found" type="button">Found subject</button>
+      </div>
+    </details>
     <div class="button-row stack-space">
       <button id="heartbeatBtn" class="button full" type="button">Send heartbeat</button>
       ${
@@ -278,6 +353,22 @@ function bindCellPanel(id) {
 }
 
 // ---- Helpers ----
+
+function _renderCellHistory(entry) {
+  const history = Array.isArray(entry.history) ? entry.history : [];
+  if (!history.length) return "";
+  const rows = [...history].reverse().map((h) => {
+    const s = STATUS[h.status] || STATUS.open;
+    return `<li class="cell-history-row">
+      <span class="status-pill ${s.className} cell-history-pill">${escapeHtml(s.label)}</span>
+      <span class="cell-history-meta">${escapeHtml(formatTime(h.timestamp))} · ${escapeHtml(h.byName || "Unknown")}</span>
+    </li>`;
+  }).join("");
+  return `
+    <div class="divider"></div>
+    <h3>Stage History</h3>
+    <ul class="cell-history-list">${rows}</ul>`;
+}
 
 function summaryItem(count, label) {
   return `<div class="summary-item"><strong>${count}</strong><span>${label}</span></div>`;

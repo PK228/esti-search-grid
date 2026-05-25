@@ -7,7 +7,7 @@ import { addAudit } from "./core/audit.js";
 import { buildGrid, buildExtendedGrid } from "./grid/builder.js";
 import { scanStaleCells } from "./grid/cells.js";
 import { refreshGrid } from "./grid/renderer.js";
-import { setupMap, toggleHastyMode, togglePoiOverlay, renderHastyOverlay } from "./ui/map.js";
+import { setupMap, toggleHastyMode, togglePoiOverlay, renderHastyOverlay, updateLegendVisibility } from "./ui/map.js";
 import { toggleGps, updateGpsStatus } from "./ui/gps.js";
 import { startTraceBoundary, cancelTraceBoundary } from "./ui/map.js";
 import { renderPanel } from "./ui/panel.js";
@@ -81,8 +81,13 @@ async function init() {
   });
 
   document.addEventListener("esti:sync-status-changed", () => {
-    if (!store.activeCellId && !store.dispatcherLoginOpen && !store.zonePanelOpen && !_panelInputFocused()) renderPanel();
     _updateSyncDot();
+    // Update sync line text in-place — avoids a full panel re-render every 3.5 s.
+    const syncLine = document.querySelector(".sync-line");
+    if (syncLine) {
+      syncLine.className = `sync-line ${store.sharedSyncStatus === "live" ? "live" : "offline"}`;
+      syncLine.textContent = `Shared sync: ${store.sharedSyncStatus}`;
+    }
   });
 
   function _updateSyncDot() {
@@ -95,6 +100,7 @@ async function init() {
   document.addEventListener("esti:dispatcher-mode-changed", () => {
     _syncUrlToDispatcherState();
     _refreshModeButtons();
+    updateLegendVisibility();
     renderPanel();
     if (state.profile.dispatcher) {
       requestAnimationFrame(() => {
@@ -162,24 +168,32 @@ function _refreshModeButtons() {
   const poiBtn = document.getElementById("poiBtn");
   const dispatcherBtn = document.getElementById("dispatcherBtn");
   const zonesBtn = document.getElementById("zonesBtn");
+
+  function _setLabel(btn, text) {
+    if (!btn) return;
+    const lbl = btn.querySelector(".btn-label");
+    if (lbl) lbl.textContent = text;
+    else btn.textContent = text;
+  }
+
   if (heatBtn) {
-    heatBtn.textContent = store.heatMode ? "Status" : "Heat";
+    _setLabel(heatBtn, store.heatMode ? "Status" : "Heat");
     heatBtn.classList.toggle("active", store.heatMode);
   }
   if (hastyBtn) {
-    hastyBtn.textContent = store.hastyMode ? "Hasty on" : "Hasty";
+    _setLabel(hastyBtn, store.hastyMode ? "Hasty on" : "Hasty");
     hastyBtn.classList.toggle("active", store.hastyMode);
   }
   if (poiBtn) {
-    poiBtn.textContent = store.poiMode ? "POIs on" : "POIs";
+    _setLabel(poiBtn, store.poiMode ? "POIs on" : "POIs");
     poiBtn.classList.toggle("active", store.poiMode);
   }
   if (dispatcherBtn) {
-    dispatcherBtn.textContent = state.profile.dispatcher
+    _setLabel(dispatcherBtn, state.profile.dispatcher
       ? "Exit dispatch"
       : store.dispatcherLoginOpen
         ? "Cancel"
-        : "Dispatcher";
+        : "Dispatcher");
     dispatcherBtn.classList.toggle("active", state.profile.dispatcher || store.dispatcherLoginOpen);
   }
   if (zonesBtn) {
@@ -187,7 +201,7 @@ function _refreshModeButtons() {
   }
   const traceBtn = document.getElementById("traceBtn");
   if (traceBtn) {
-    traceBtn.textContent = store.traceBoundaryMode ? "Stop tracing" : "Trace boundary";
+    _setLabel(traceBtn, store.traceBoundaryMode ? "Stop tracing" : "Trace boundary");
     traceBtn.classList.toggle("active", store.traceBoundaryMode);
   }
 }
@@ -198,6 +212,9 @@ function _toggleZonePanel() {
     store.activeCellId = null;
     store.activeZoneId = null;
     store.dispatcherLoginOpen = false;
+    store.panelTab = "zones";
+  } else {
+    store.panelTab = "command";
   }
   _refreshModeButtons();
   renderPanel();

@@ -156,12 +156,12 @@
     </div>
   </div>
 
-  <div class="footer">Esti Search Coordination App &nbsp;·&nbsp; a-girl-is-lost-and-i.vercel.app</div>
+  <div class="footer" id="qrFooter">Esti Search Coordination App</div>
 </div>
 
 <script>
 (function () {
-  const BASE_DOMAIN = "a-girl-is-lost-and-i.vercel.app";
+  const BASE_DOMAIN = window.location.host || "esti-search-grid-hatmada.vercel.app";
   const searchId = new URLSearchParams(window.location.search).get("s") || "";
 
   const intakeUrl = searchId
@@ -175,6 +175,7 @@
   document.getElementById("qrImg").src =
     `https://api.qrserver.com/v1/create-qr-code/?size=520x520&data=${encodeURIComponent(intakeUrl)}&margin=10&color=0f172a&bgcolor=ffffff`;
   document.getElementById("qrUrl").textContent = displayUrl;
+  document.getElementById("qrFooter").textContent = `Esti Search Coordination App \u00b7 ${BASE_DOMAIN}`;
 
   if (searchId) {
     const badge = document.getElementById("searchBadge");

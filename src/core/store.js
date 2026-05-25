@@ -61,8 +61,14 @@ export const store = {
   poiFilter: new Set(["hospital", "pharmacy", "police", "community_centre", "shelter", "subway_entrance", "bus_stop", "park"]),
 
   // Volunteer positions (managed by positions.js)
+  volunteerPositions: new Map(), // userId → { lat, lng } — latest ping per volunteer
   positionsKey: localStorage.getItem(POSITIONS_KEY_STORE) || "",
   positionSyncTimer: null,
+  positionFeedStatus: localStorage.getItem(POSITIONS_KEY_STORE) ? "checking" : "locked",
+  positionFeedMessage: localStorage.getItem(POSITIONS_KEY_STORE)
+    ? "Checking location feed..."
+    : "Location feed locked. Enter the dispatcher location key to show GPS pings.",
+  positionCount: 0,
 
   // Cell picking mode — dispatcher clicks a grid cell to assign it to a volunteer
   assigningVolunteerId: null,
@@ -71,14 +77,19 @@ export const store = {
   // Assignment overlays (dispatcher-only; rebuilt on each queue/positions refresh)
   assignedCells: new Map(),  // cellId → volunteer display name
   occupiedCells: new Set(),  // cellIds where a volunteer's GPS is inside their assigned cell
+  volunteerInfoMap: new Map(), // volunteerId → { firstName, lastName, phone, email }
 
   // Timers
   staleTimer: null,
 
   // Boundary tracing tool (managed by map.js)
   traceBoundaryMode: false,
+  boundaryVisible: true,
 
   // Dispatcher search panel open state (preserved across re-renders)
   newSearchOpen: false,
   searchSwitcherOpen: false,
+
+  // Panel tab ("command" | "queue" | "zones")
+  panelTab: "command",
 };

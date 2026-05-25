@@ -7,6 +7,13 @@ import { getCellStyle, renderLabels, refreshGrid } from "../grid/renderer.js";
 import { escapeHtml, escapeAttr, formatLastSeenTime, toLocalDatetimeValue } from "../utils/format.js";
 import { showToast } from "../utils/toast.js";
 
+// ---- Legend ----
+let _legendContainer = null;
+
+export function updateLegendVisibility() {
+  if (_legendContainer) _legendContainer.hidden = !state.profile.dispatcher;
+}
+
 // ---- Boundary tracing tool ----
 let _traceVertices = [];
 let _tracePolyline = null;
@@ -51,6 +58,12 @@ export function startTraceBoundary() {
   _traceMarkers = [];
   _tracePolyline = L.polyline([], { color: "#f59e0b", weight: 2.5, dashArray: "6,4" }).addTo(store.map);
   store.map.getContainer().style.cursor = "crosshair";
+
+  const banner = document.createElement("div");
+  banner.id = "traceBanner";
+  banner.className = "leaflet-trace-banner";
+  banner.textContent = "TRACING NEW BOUNDARY — Tap the map to add points";
+  store.map.getContainer().appendChild(banner);
 
   const TraceCtrl = L.Control.extend({
     onAdd() {
@@ -98,7 +111,8 @@ export function finishTraceBoundary() {
     weight: 3,
     opacity: 0.95,
     fill: false,
-  }).addTo(store.map);
+  });
+  if (store.boundaryVisible) store.extBoundaryLayer.addTo(store.map);
 
   // Rebuild extended grid cells and refresh.
   try {
@@ -120,6 +134,7 @@ export function cancelTraceBoundary() {
   _traceVertices = [];
   if (_traceControl) { store.map.removeControl(_traceControl); _traceControl = null; }
   store.map.getContainer().style.cursor = "";
+  document.getElementById("traceBanner")?.remove();
   document.dispatchEvent(new CustomEvent("esti:mode-buttons-changed"));
 }
 
@@ -181,6 +196,61 @@ export function setupMap(onCellClick) {
     },
   });
   new SatToggle({ position: "topright" }).addTo(store.map);
+
+  const BoundaryToggle = L.Control.extend({
+    onAdd() {
+      const btn = L.DomUtil.create("button", "leaflet-boundary-toggle");
+      btn.title = "Show / hide boundary outlines";
+      btn.textContent = "Outline";
+      L.DomEvent.on(btn, "click", (e) => {
+        L.DomEvent.stopPropagation(e);
+        store.boundaryVisible = !store.boundaryVisible;
+        if (store.boundaryVisible) {
+          store.boundaryLayer?.addTo(store.map);
+          store.extBoundaryLayer?.addTo(store.map);
+          btn.classList.remove("active");
+          btn.textContent = "Outline";
+        } else {
+          if (store.boundaryLayer) store.map.removeLayer(store.boundaryLayer);
+          if (store.extBoundaryLayer) store.map.removeLayer(store.extBoundaryLayer);
+          btn.classList.add("active");
+          btn.textContent = "Outline off";
+        }
+      });
+      return btn;
+    },
+  });
+  new BoundaryToggle({ position: "topright" }).addTo(store.map);
+
+  const LegendCtrl = L.Control.extend({
+    onAdd() {
+      const div = L.DomUtil.create("div", "leaflet-legend");
+      _legendContainer = div;
+      div.hidden = !state.profile.dispatcher;
+      div.innerHTML = `
+        <button class="legend-toggle" type="button">Legend <span class="legend-arrow">▾</span></button>
+        <div class="legend-body">
+          <div class="legend-item"><span class="legend-swatch" style="background:#f1f5f9;border:1.5px solid #4b5563"></span>Open</div>
+          <div class="legend-item"><span class="legend-swatch" style="background:#2563eb"></span>Searching</div>
+          <div class="legend-item"><span class="legend-swatch" style="background:#16a34a"></span>Complete</div>
+          <div class="legend-item"><span class="legend-swatch" style="background:#64748b"></span>Stopped</div>
+          <div class="legend-item"><span class="legend-swatch" style="background:#fbbf24;border:1px solid #d97706"></span>Stale released</div>
+          <div class="legend-item"><span class="legend-swatch" style="background:#f59e0b"></span>Needs backup</div>
+          <div class="legend-item"><span class="legend-swatch" style="background:#ef4444"></span>Emergency</div>
+          <div class="legend-item"><span class="legend-swatch" style="background:#e11d48"></span>Found subject</div>
+        </div>`;
+      const btn = div.querySelector(".legend-toggle");
+      const body = div.querySelector(".legend-body");
+      L.DomEvent.on(btn, "click", (e) => {
+        L.DomEvent.stopPropagation(e);
+        body.hidden = !body.hidden;
+        div.querySelector(".legend-arrow").textContent = body.hidden ? "▸" : "▾";
+      });
+      L.DomEvent.disableClickPropagation(div);
+      return div;
+    },
+  });
+  new LegendCtrl({ position: "bottomright" }).addTo(store.map);
 
   store.boundaryLayer = L.polygon(boundaryLatLng, {
     color: "#111827",
@@ -320,47 +390,55 @@ export function renderLastSeenControl() {
   const spot = state.lastSeen;
   const trail = Array.isArray(state.lastSeenTrail) ? state.lastSeenTrail : [];
   return `
-    <h3>Last-seen location</h3>
-    ${
-      spot
-        ? `<p class="notice success">Pin is on the map${spot.time ? ` — last seen ${escapeHtml(formatLastSeenTime(spot.time))}` : ""}. Everyone searching can see it.</p>`
-        : '<p class="muted tight">No pin yet. Mark where the subject was last seen so the whole team can focus there.</p>'
-    }
-    ${spot && spot.address ? `<p class="small">${escapeHtml(spot.address)}</p>` : ""}
-    <form id="lastSeenAddressForm" class="verification-row">
-      <label>Find by address
-        <input id="lastSeenAddress" autocomplete="off" placeholder="123 Finch Ave W" />
-      </label>
-      <button id="findAddressBtn" class="button active" type="submit">Find</button>
-    </form>
-    <div class="button-row">
-      <button id="placeLastSeenBtn" class="button primary" type="button">${
-        store.placingLastSeen ? "Tap the map…" : spot ? "New sighting" : "Place pin on map"
-      }</button>
-      ${spot ? '<button id="removeLastSeenBtn" class="button warning" type="button">Remove pin</button>' : ""}
-      ${trail.length > 0 ? '<button id="clearTrailBtn" class="button" type="button">Clear trail</button>' : ""}
-    </div>
-    ${trail.length > 0 ? `<p class="muted small">${trail.length} previous sighting${trail.length > 1 ? "s" : ""} shown on map.</p>` : ""}
-    ${
-      spot
-        ? `<form id="lastSeenForm" class="login-form">
-      <label>Time last seen
-        <input id="lastSeenTime" type="datetime-local" value="${escapeAttr(spot.time || "")}" />
-      </label>
-      <label>Note
-        <textarea id="lastSeenNote">${escapeHtml(spot.note || "")}</textarea>
-      </label>
-      <div class="photo-upload-row">
-        ${spot.photoData ? `<img src="${spot.photoData}" class="photo-thumb" alt="Last-seen location photo" />` : ""}
-        <label class="button full" style="cursor:pointer;text-align:center;">
-          ${spot.photoData ? "Replace photo" : "Add location photo"}
-          <input id="lastSeenPhotoInput" type="file" accept="image/*" hidden />
+    <div class="last-seen-control">
+      <h3>Last-seen location</h3>
+      ${
+        spot
+          ? `<p class="notice success">Pin is on the map${spot.time ? ` — last seen ${escapeHtml(formatLastSeenTime(spot.time))}` : ""}. Everyone searching can see it.</p>`
+          : '<p class="muted tight">No pin yet. Mark where the subject was last seen so the whole team can focus there.</p>'
+      }
+      ${spot && spot.address ? `<p class="small">${escapeHtml(spot.address)}</p>` : ""}
+      <form id="lastSeenAddressForm" class="verification-row">
+        <label>Find by address
+          <input id="lastSeenAddress" autocomplete="off" placeholder="123 Finch Ave W" />
         </label>
+        <button id="findAddressBtn" class="button active" type="submit">Find</button>
+      </form>
+      <div class="button-row">
+        <button id="placeLastSeenBtn" class="button primary" type="button">${
+          store.placingLastSeen ? "Tap the map…" : spot ? "New sighting" : "Place pin on map"
+        }</button>
+        ${spot ? '<button id="removeLastSeenBtn" class="button warning" type="button">Remove pin</button>' : ""}
+        ${trail.length > 0 ? '<button id="clearTrailBtn" class="button" type="button">Clear trail</button>' : ""}
       </div>
-      <button class="button success full" type="submit">Save details</button>
-    </form>`
-        : ""
-    }
+      ${trail.length > 0 ? `<p class="muted small">${trail.length} previous sighting${trail.length > 1 ? "s" : ""} shown on map.</p>` : ""}
+      ${
+        spot
+          ? `<form id="lastSeenForm" class="last-seen-details-form" style="display:grid;gap:10px;margin-top:0">
+            <div class="divider"></div>
+            <div class="field-row">
+              <label>Date last seen
+                <input id="lastSeenDate" type="date" value="${escapeAttr(spot.time ? spot.time.split("T")[0] : "")}" />
+              </label>
+              <label>Time last seen
+                <input id="lastSeenTimePart" type="time" value="${escapeAttr(spot.time && spot.time.includes("T") ? spot.time.split("T")[1] : spot.time || "")}" />
+              </label>
+            </div>
+            <label>Note
+              <textarea id="lastSeenNote">${escapeHtml(spot.note || "")}</textarea>
+            </label>
+            <div class="photo-upload-row">
+              ${spot.photoData ? `<img src="${spot.photoData}" class="photo-thumb" alt="Last-seen location photo" />` : ""}
+              <label class="button full" style="cursor:pointer;text-align:center;">
+                ${spot.photoData ? "Replace photo" : "Add location photo"}
+                <input id="lastSeenPhotoInput" type="file" accept="image/*" hidden />
+              </label>
+            </div>
+            <button class="button success full" type="submit">Save details</button>
+          </form>`
+          : ""
+      }
+    </div>
   `;
 }
 
@@ -439,7 +517,9 @@ export async function geocodeLastSeen(event) {
 export function saveLastSeenDetails(event) {
   event?.preventDefault();
   if (!state.lastSeen) return;
-  state.lastSeen.time = document.getElementById("lastSeenTime")?.value || state.lastSeen.time;
+  const _date = document.getElementById("lastSeenDate")?.value || "";
+  const _time = document.getElementById("lastSeenTimePart")?.value || "";
+  state.lastSeen.time = _date && _time ? `${_date}T${_time}` : _date || _time || state.lastSeen.time;
   state.lastSeen.note = document.getElementById("lastSeenNote")?.value.trim() || "";
   state.lastSeen.setBy = state.profile.name || state.lastSeen.setBy || "Dispatcher";
   state.lastSeen.updatedAt = new Date().toISOString();

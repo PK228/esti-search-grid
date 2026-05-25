@@ -9,6 +9,9 @@
       href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
     />
     <link rel="stylesheet" href="./styles.css" />
+    <script>
+      (function(){var t=localStorage.getItem('esti-theme')||'light';document.documentElement.setAttribute('data-theme',t);})();
+    </script>
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@turf/turf@6/turf.min.js"></script>
     <!-- app.js retained as fallback; active entry point is src/main.js -->
@@ -18,25 +21,94 @@
     <div class="app-shell">
       <header class="topbar">
         <div class="brand-block">
-          <p class="eyebrow">Keele to Yonge, Steeles to Eglinton</p>
-          <h1>ESTI</h1>
-          <span id="syncDot" class="sync-dot" title="Shared sync status"></span>
+          <p class="eyebrow">Keele to Yonge · Steeles to Eglinton</p>
+          <div class="brand-row">
+            <h1>ESTI</h1>
+            <span id="syncDot" class="sync-dot" title="Shared sync status"></span>
+          </div>
         </div>
-        <div class="top-actions" aria-label="Map actions">
-          <button id="locateBtn" class="button primary" type="button">
-            Locate me
-          </button>
-          <button id="areaBtn" class="button" type="button">Area</button>
-          <button id="heatBtn" class="button" type="button">Heat</button>
-          <button id="hastyBtn" class="button" type="button">Hasty</button>
-          <button id="poiBtn" class="button" type="button">POIs</button>
-          <button id="zonesBtn" class="button" type="button">Zones</button>
-          <button id="dispatcherBtn" class="button" type="button">Dispatcher</button>
-          <button id="traceBtn" class="button" type="button">Trace boundary</button>
-          <button id="exportBtn" class="button" type="button">Export</button>
-          <button id="importBtn" class="button" type="button">Import</button>
-          <input id="importFile" type="file" accept="application/json" hidden />
-        </div>
+
+        <nav class="tool-groups" aria-label="Map actions">
+          <!-- NAV -->
+          <div class="tool-group">
+            <span class="tool-group-label">Nav</span>
+            <div class="tool-group-btns">
+              <button id="locateBtn" class="tool-btn primary" type="button" title="Locate me">
+                <svg class="btn-icon" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="8" cy="8" r="3.5"/><line x1="8" y1=".5" x2="8" y2="4.5"/><line x1="8" y1="11.5" x2="8" y2="15.5"/><line x1=".5" y1="8" x2="4.5" y2="8"/><line x1="11.5" y1="8" x2="15.5" y2="8"/></svg>
+                <span class="btn-label">Locate</span>
+              </button>
+              <button id="areaBtn" class="tool-btn" type="button" title="Fit to search area">
+                <svg class="btn-icon" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5.5 2h-3a.5.5 0 0 0-.5.5v3"/><path d="M10.5 2h3a.5.5 0 0 1 .5.5v3"/><path d="M5.5 14h-3a.5.5 0 0 1-.5-.5v-3"/><path d="M10.5 14h3a.5.5 0 0 0 .5-.5v-3"/></svg>
+                <span class="btn-label">Area</span>
+              </button>
+            </div>
+          </div>
+
+          <div class="tool-sep" role="separator"></div>
+
+          <!-- VIEW -->
+          <div class="tool-group">
+            <span class="tool-group-label">View</span>
+            <div class="tool-group-btns">
+              <button id="heatBtn" class="tool-btn" type="button" title="Toggle status heatmap">
+                <svg class="btn-icon" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="6" y="2" width="4" height="7" rx="2"/><circle cx="8" cy="11" r="2.5"/><line x1="10" y1="4.5" x2="12.5" y2="4.5"/><line x1="10" y1="7" x2="12.5" y2="7"/></svg>
+                <span class="btn-label">Heat</span>
+              </button>
+              <button id="hastyBtn" class="tool-btn" type="button" title="Hasty search route">
+                <svg class="btn-icon" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="9,1.5 5.5,8.5 8.5,8.5 7,14.5 10.5,7.5 7.5,7.5"/></svg>
+                <span class="btn-label">Hasty</span>
+              </button>
+              <button id="poiBtn" class="tool-btn" type="button" title="Points of interest">
+                <svg class="btn-icon" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 1.5C5.5 1.5 3.5 3.5 3.5 6c0 3.8 4.5 8.5 4.5 8.5S12.5 9.8 12.5 6C12.5 3.5 10.5 1.5 8 1.5z"/><circle cx="8" cy="6" r="1.5"/></svg>
+                <span class="btn-label">POIs</span>
+              </button>
+              <button id="zonesBtn" class="tool-btn" type="button" title="Manage zones">
+                <svg class="btn-icon" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="5.5" height="5.5" rx=".5"/><rect x="8.5" y="2" width="5.5" height="5.5" rx=".5"/><rect x="2" y="8.5" width="5.5" height="5.5" rx=".5"/><rect x="8.5" y="8.5" width="5.5" height="5.5" rx=".5"/></svg>
+                <span class="btn-label">Zones</span>
+              </button>
+            </div>
+          </div>
+
+          <div class="tool-sep" role="separator"></div>
+
+          <!-- OPS -->
+          <div class="tool-group">
+            <span class="tool-group-label">Ops</span>
+            <div class="tool-group-btns">
+              <button id="dispatcherBtn" class="tool-btn" type="button" title="Dispatcher panel">
+                <svg class="btn-icon" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="5.5" r="2.5"/><path d="M2.5 14C2.5 11.2 5 9 8 9s5.5 2.2 5.5 5"/></svg>
+                <span class="btn-label">Dispatcher</span>
+              </button>
+              <button id="traceBtn" class="tool-btn" type="button" title="Trace boundary">
+                <svg class="btn-icon" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M11.5 2.5 14 5l-8.5 8.5-3 .5.5-3z"/><line x1="9.5" y1="4.5" x2="12" y2="7"/></svg>
+                <span class="btn-label">Trace</span>
+              </button>
+            </div>
+          </div>
+
+          <div class="tool-sep" role="separator"></div>
+
+          <!-- DATA -->
+          <div class="tool-group">
+            <span class="tool-group-label">Data</span>
+            <div class="tool-group-btns">
+              <button id="exportBtn" class="tool-btn" type="button" title="Export state">
+                <svg class="btn-icon" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 10V2M5 5l3-3 3 3"/><path d="M2.5 13h11"/></svg>
+                <span class="btn-label">Export</span>
+              </button>
+              <button id="importBtn" class="tool-btn" type="button" title="Import state">
+                <svg class="btn-icon" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2v8M5 7l3 3 3-3"/><path d="M2.5 13h11"/></svg>
+                <span class="btn-label">Import</span>
+              </button>
+              <input id="importFile" type="file" accept="application/json" hidden />
+            </div>
+          </div>
+        </nav>
+
+        <button id="themeToggle" class="tool-btn theme-toggle-btn" type="button" aria-label="Toggle dark/light mode" title="Toggle dark/light mode">
+          <svg id="themeIconMoon" width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M12.5 12C7.8 12 4 8.2 4 3.5c0-.9.1-1.8.4-2.5A7 7 0 1 0 15 12c-.8.3-1.6.4-2.5 0z"/></svg>
+          <svg id="themeIconSun" width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="8" cy="8" r="3"/><line x1="8" y1="1" x2="8" y2="3"/><line x1="8" y1="13" x2="8" y2="15"/><line x1="1" y1="8" x2="3" y2="8"/><line x1="13" y1="8" x2="15" y2="8"/><line x1="3.1" y1="3.1" x2="4.5" y2="4.5"/><line x1="11.5" y1="11.5" x2="12.9" y2="12.9"/><line x1="3.1" y1="12.9" x2="4.5" y2="11.5"/><line x1="11.5" y1="4.5" x2="12.9" y2="3.1"/></svg>
+        </button>
       </header>
 
       <div id="poiFilterBar" class="poi-filter-bar" hidden></div>
@@ -52,10 +124,97 @@
           <div id="gpsStatus" class="gps-status">GPS idle</div>
         </section>
 
+        <div class="panel-resizer" id="panelResizer" title="Drag to resize panel"></div>
+
         <aside id="panel" class="panel" aria-live="polite"></aside>
       </main>
     </div>
 
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+    <script>
+      // Theme toggle
+      (function () {
+        const btn = document.getElementById("themeToggle");
+        btn.addEventListener("click", function () {
+          const isDark = document.documentElement.getAttribute("data-theme") === "dark";
+          const next = isDark ? "light" : "dark";
+          document.documentElement.setAttribute("data-theme", next);
+          localStorage.setItem("esti-theme", next);
+        });
+      })();
+    </script>
+
+    <script>
+      (function () {
+        const MIN_W = 260, MAX_W = 900;
+        const STORE_KEY = "esti-panel-w";
+        const workspace = document.querySelector(".workspace");
+        const resizer   = document.getElementById("panelResizer");
+
+        function applyWidth(w) {
+          workspace.style.setProperty("--panel-w", w + "px");
+        }
+
+        // Restore saved width
+        const saved = parseInt(localStorage.getItem(STORE_KEY), 10);
+        if (saved >= MIN_W && saved <= MAX_W) applyWidth(saved);
+
+        resizer.addEventListener("mousedown", function (e) {
+          e.preventDefault();
+          resizer.classList.add("dragging");
+          document.body.style.cursor = "col-resize";
+          document.body.style.userSelect = "none";
+
+          function onMove(ev) {
+            const rect = workspace.getBoundingClientRect();
+            const w = Math.min(MAX_W, Math.max(MIN_W, rect.right - ev.clientX));
+            applyWidth(w);
+          }
+
+          function onUp(ev) {
+            resizer.classList.remove("dragging");
+            document.body.style.cursor = "";
+            document.body.style.userSelect = "";
+            document.removeEventListener("mousemove", onMove);
+            document.removeEventListener("mouseup", onUp);
+            const rect = workspace.getBoundingClientRect();
+            const w = Math.min(MAX_W, Math.max(MIN_W, rect.right - ev.clientX));
+            localStorage.setItem(STORE_KEY, w);
+          }
+
+          document.addEventListener("mousemove", onMove);
+          document.addEventListener("mouseup", onUp);
+        });
+
+        // Touch support
+        resizer.addEventListener("touchstart", function (e) {
+          e.preventDefault();
+          resizer.classList.add("dragging");
+
+          function onMove(ev) {
+            const touch = ev.touches[0];
+            const rect = workspace.getBoundingClientRect();
+            const w = Math.min(MAX_W, Math.max(MIN_W, rect.right - touch.clientX));
+            applyWidth(w);
+          }
+
+          function onEnd(ev) {
+            resizer.classList.remove("dragging");
+            document.removeEventListener("touchmove", onMove);
+            document.removeEventListener("touchend", onEnd);
+            if (ev.changedTouches[0]) {
+              const rect = workspace.getBoundingClientRect();
+              const w = Math.min(MAX_W, Math.max(MIN_W, rect.right - ev.changedTouches[0].clientX));
+              localStorage.setItem(STORE_KEY, w);
+            }
+          }
+
+          document.addEventListener("touchmove", onMove, { passive: false });
+          document.addEventListener("touchend", onEnd);
+        }, { passive: false });
+      })();
+    </script>
+    <a href="https://pkdma.com" target="_blank" rel="noopener" style="position:fixed;bottom:8px;right:10px;font-size:10px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:rgba(255,255,255,0.4);text-decoration:none;z-index:9999;background:rgba(0,0,0,0.25);padding:3px 8px;border-radius:4px;backdrop-filter:blur(4px);letter-spacing:0.01em;transition:color .2s;" onmouseover="this.style.color='rgba(255,255,255,0.85)'" onmouseout="this.style.color='rgba(255,255,255,0.4)'">ESTI was built by agenticphil</a>
   </body>
 </html>

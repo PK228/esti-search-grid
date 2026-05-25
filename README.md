@@ -7,6 +7,20 @@ Volunteer instructions are in [VOLUNTEER_README.md](VOLUNTEER_README.md).
 
 ## Run locally
 
+For the full dispatcher/volunteer flow, including `/api/*` routes and GPS pings:
+
+```bash
+set -a; . ./.env.local; set +a; npx vercel dev --listen 5173
+```
+
+Then open:
+
+```text
+http://localhost:5173
+```
+
+For static map-only viewing:
+
 ```bash
 python3 -m http.server 5173
 ```

@@ -136,6 +136,15 @@
     .guide-link { text-align: center; font-size: 12px; color: #475569; }
     .guide-link a { color: #4ade80; text-decoration: none; font-weight: 600; }
     .guide-link a:hover { text-decoration: underline; }
+
+    /* ── Per-field validation ── */
+    .field-error {
+      font-size: 11px; font-weight: 600; color: #fca5a5;
+      margin-top: 4px; display: none;
+    }
+    .field-error.visible { display: block; }
+    input.invalid { border-color: #ef4444 !important; }
+    input.valid { border-color: #16a34a !important; }
   </style>
 </head>
 <body>
@@ -161,19 +170,23 @@
           <label>
             <span class="label-text">First name *</span>
             <input id="firstName" type="text" autocomplete="given-name" placeholder="First" required />
+            <span class="field-error" id="firstNameError"></span>
           </label>
           <label>
             <span class="label-text">Last name *</span>
             <input id="lastName" type="text" autocomplete="family-name" placeholder="Last" required />
+            <span class="field-error" id="lastNameError"></span>
           </label>
         </div>
         <label>
-          <span class="label-text">Phone number</span>
-          <input id="phone" type="tel" autocomplete="tel" inputmode="tel" placeholder="+1 (416) 555-0000" />
+          <span class="label-text">Phone number *</span>
+          <input id="phone" type="tel" autocomplete="tel" inputmode="tel" placeholder="+1 (416) 555-0000" required />
+          <span class="field-error" id="phoneError"></span>
         </label>
         <label>
-          <span class="label-text">Email address</span>
-          <input id="email" type="email" autocomplete="email" inputmode="email" placeholder="you@example.com" />
+          <span class="label-text">Email address *</span>
+          <input id="email" type="email" autocomplete="email" inputmode="email" placeholder="you@example.com" required />
+          <span class="field-error" id="emailError"></span>
         </label>
         <div id="errorMsg" class="error-msg" role="alert"></div>
         <button type="submit" class="submit-btn" id="submitBtn">Check In &rarr;</button>
@@ -199,12 +212,12 @@
         <div class="waiting-label">Assignment</div>
         <div class="waiting-status" id="waitingStatus">
           <span class="spinner"></span>
-          <span>Waiting for dispatcher…</span>
+          <span>Waiting for dispatcher… You'll be sent to your map automatically when assigned.</span>
         </div>
       </div>
 
       <div id="assignedBlock" style="display:none;flex-direction:column;gap:12px;">
-        <div class="confirm-sub" style="font-weight:700;color:#f1f5f9;">You've been assigned:</div>
+        <div class="confirm-sub" style="font-weight:700;color:#f1f5f9;">You've been assigned — opening your map…</div>
         <div><span class="assigned-cell-badge" id="assignedCellBadge">—</span></div>
         <a id="openMapBtn" href="#" class="open-map-btn">Open My Map &rarr;</a>
       </div>
@@ -238,6 +251,74 @@
     startPolling(storedToken, storedId);
   }
 
+  // ── Validation helpers ──
+  function validateName(value, errorId) {
+    const el = document.getElementById(errorId);
+    const inp = errorId === "firstNameError"
+      ? document.getElementById("firstName")
+      : document.getElementById("lastName");
+    const v = value.trim();
+    let msg = "";
+    if (!v) {
+      msg = "This field is required.";
+    } else if (v.length < 2) {
+      msg = "Must be at least 2 characters.";
+    } else if (!/[a-zA-Z]{2,}/.test(v)) {
+      msg = "Must contain at least 2 letters.";
+    } else if (/[^a-zA-Z\s'\-]/.test(v)) {
+      msg = "Only letters, spaces, hyphens, and apostrophes allowed.";
+    } else if (/^(.)\1{2,}$/.test(v.replace(/\s/g, ""))) {
+      msg = "Please enter a real name.";
+    }
+    el.textContent = msg;
+    el.className = "field-error" + (msg ? " visible" : "");
+    inp.className = msg ? "invalid" : "valid";
+    return !msg;
+  }
+
+  function validatePhone(value, errorId) {
+    const el = document.getElementById(errorId);
+    const inp = document.getElementById("phone");
+    const v = value.trim();
+    const digits = v.replace(/\D/g, "");
+    let msg = "";
+    if (!v) {
+      msg = "Phone number is required.";
+    } else if (digits.length < 10) {
+      msg = "Enter a valid phone number (at least 10 digits).";
+    } else if (digits.length > 15) {
+      msg = "Phone number is too long.";
+    } else if (!/^\+?[\d\s\-().#]{7,}$/.test(v)) {
+      msg = "Invalid characters in phone number.";
+    }
+    el.textContent = msg;
+    el.className = "field-error" + (msg ? " visible" : "");
+    inp.className = msg ? "invalid" : "valid";
+    return !msg;
+  }
+
+  function validateEmail(value, errorId) {
+    const el = document.getElementById(errorId);
+    const inp = document.getElementById("email");
+    const v = value.trim();
+    let msg = "";
+    if (!v) {
+      msg = "Email address is required.";
+    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(v)) {
+      msg = "Enter a valid email address.";
+    }
+    el.textContent = msg;
+    el.className = "field-error" + (msg ? " visible" : "");
+    inp.className = msg ? "invalid" : "valid";
+    return !msg;
+  }
+
+  // Validate on blur
+  document.getElementById("firstName").addEventListener("blur", (e) => validateName(e.target.value, "firstNameError"));
+  document.getElementById("lastName").addEventListener("blur", (e) => validateName(e.target.value, "lastNameError"));
+  document.getElementById("phone").addEventListener("blur", (e) => validatePhone(e.target.value, "phoneError"));
+  document.getElementById("email").addEventListener("blur", (e) => validateEmail(e.target.value, "emailError"));
+
   // ── Form submit ──
   document.getElementById("intakeForm").addEventListener("submit", async (e) => {
     e.preventDefault();
@@ -250,8 +331,15 @@
 
     errorEl.className = "error-msg";
 
-    if (!firstName || !lastName) {
-      errorEl.textContent = "First name and last name are required.";
+    const ok = [
+      validateName(firstName, "firstNameError"),
+      validateName(lastName, "lastNameError"),
+      validatePhone(phone, "phoneError"),
+      validateEmail(email, "emailError"),
+    ].every(Boolean);
+
+    if (!ok) {
+      errorEl.textContent = "Please fix the errors above before checking in.";
       errorEl.className = "error-msg visible";
       return;
     }
@@ -315,12 +403,14 @@
   }
 
   function showAssigned(token, cellId, sid) {
+    const mapUrl = `/v/${encodeURIComponent(token)}?s=${encodeURIComponent(sid)}`;
     document.getElementById("waitingBlock").style.display = "none";
     const assignedBlock = document.getElementById("assignedBlock");
     assignedBlock.style.display = "flex";
     document.getElementById("assignedCellBadge").textContent = `Grid ${cellId}`;
-    const mapUrl = `/v/${encodeURIComponent(token)}?s=${encodeURIComponent(sid)}`;
     document.getElementById("openMapBtn").href = mapUrl;
+    // Auto-redirect after 2.5 s so the volunteer sees their assignment before being taken to the map.
+    setTimeout(() => { window.location.href = mapUrl; }, 2500);
   }
 
   function escHtml(s) {
@@ -330,5 +420,6 @@
   }
 })();
 </script>
+<a href="https://pkdma.com" target="_blank" rel="noopener" style="position:fixed;bottom:8px;right:10px;font-size:10px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:rgba(255,255,255,0.4);text-decoration:none;z-index:9999;background:rgba(0,0,0,0.25);padding:3px 8px;border-radius:4px;backdrop-filter:blur(4px);letter-spacing:0.01em;transition:color .2s;" onmouseover="this.style.color='rgba(255,255,255,0.85)'" onmouseout="this.style.color='rgba(255,255,255,0.4)'">ESTI was built by agenticphil</a>
 </body>
 </html>

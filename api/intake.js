@@ -11,7 +11,7 @@ function json(res, status, body) {
   res.statusCode = status;
   res.setHeader("Content-Type", "application/json; charset=utf-8");
   res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Methods", "GET,POST,PATCH,OPTIONS");
+  res.setHeader("Access-Control-Allow-Methods", "GET,POST,PATCH,DELETE,OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type, x-positions-key");
   res.end(JSON.stringify(body));
 }
@@ -117,6 +117,31 @@ module.exports = async function handler(req, res) {
       const key = volunteersKey(searchId);
       const volunteers = await redisGet(key);
 
+      // Dispatcher-added volunteer — validate key, skip token/trackingUrl generation
+      if (payload.dispatcherAdded) {
+        const configured = process.env.POSITIONS_READ_KEY || "";
+        const provided = String(payload.dispatchKey || "");
+        if (!configured || provided !== configured) {
+          json(res, 403, { ok: false, error: "Restricted" }); return;
+        }
+        const volunteerId = crypto.randomBytes(6).toString("hex");
+        volunteers[volunteerId] = {
+          id: volunteerId,
+          ...fields,
+          tokenHash: null,
+          trackingUrl: null,
+          assignedCell: null,
+          assignedCellCoords: null,
+          status: "queued",
+          createdAt: Date.now(),
+          searchId,
+          dispatcherAdded: true,
+        };
+        await redisSet(key, volunteers);
+        json(res, 200, { ok: true, volunteerId });
+        return;
+      }
+
       const rawToken = generateToken();
       const tokenHash = hashToken(rawToken);
       const volunteerId = crypto.randomBytes(6).toString("hex");
@@ -217,6 +242,28 @@ module.exports = async function handler(req, res) {
       await redisSet(key, volunteers);
       const { tokenHash: _t, ...safe } = volunteers[volunteerId];
       json(res, 200, { ok: true, volunteer: safe });
+      return;
+    }
+
+    // DELETE — dispatcher removes a volunteer from the queue entirely
+    if (req.method === "DELETE") {
+      const configured = process.env.POSITIONS_READ_KEY || "";
+      const raw = await readBody(req);
+      const payload = raw ? JSON.parse(raw) : {};
+      const provided = String(payload.dispatchKey || "");
+      if (!configured || provided !== configured) {
+        json(res, 403, { ok: false, error: "Restricted" }); return;
+      }
+      const { volunteerId, searchId = "default" } = payload;
+      if (!volunteerId) { json(res, 400, { ok: false, error: "volunteerId required" }); return; }
+
+      const key = volunteersKey(searchId);
+      const volunteers = await redisGet(key);
+      if (!volunteers[volunteerId]) { json(res, 404, { ok: false, error: "Volunteer not found" }); return; }
+
+      delete volunteers[volunteerId];
+      await redisSet(key, volunteers);
+      json(res, 200, { ok: true });
       return;
     }
 

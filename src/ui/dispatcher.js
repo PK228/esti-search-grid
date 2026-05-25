@@ -2,6 +2,7 @@ import { SHARED_API_BASE, SEARCH_ID, POSITIONS_KEY_STORE, SEARCH_AREA, SEARCH_AR
 import { state, saveState } from "../core/state.js";
 import { store } from "../core/store.js";
 import { addAudit } from "../core/audit.js";
+import { fetchVolunteerPositions } from "../core/positions.js";
 import { getOpenIncidents } from "../grid/incidents.js";
 import { getCellsByStatus } from "../grid/cells.js";
 import { renderLastSeenControl, enterCellPickingMode, exitCellPickingMode } from "./map.js";
@@ -25,7 +26,6 @@ export function renderDispatcherDashboard() {
       <h3>Dispatcher</h3>
       <p class="notice success"><strong>Dispatcher mode active.</strong> Use the top button to exit dispatch mode.</p>
       ${renderSearchControl()}
-      ${renderLocationKeyControl()}
       ${renderLastSeenControl()}
       <div class="button-row">
         <button id="runStaleBtn" class="button warning" type="button">Run stale release</button>
@@ -34,8 +34,6 @@ export function renderDispatcherDashboard() {
       <div class="button-row">
         <button id="resetCellsBtn" class="button danger" type="button">Reset all cells</button>
       </div>
-      <h3>Volunteer Queue</h3>
-      <div id="volunteerQueue">${_renderQueueContents()}</div>
       <div class="dashboard-strip">
         ${dashboardList("Active", activeCells)}
         ${dashboardList("Stale", staleCells)}
@@ -48,16 +46,77 @@ export function renderDispatcherDashboard() {
   `;
 }
 
+export function getVolunteerCount() {
+  return _cachedVolunteers.filter(v => v.status !== "completed" && v.status !== "found").length;
+}
+
+export function renderQueueTab() {
+  if (!store.positionsKey) {
+    return `<p class="muted" style="padding:8px 0">Location feed not yet available. Log in as dispatcher to enable the volunteer queue.</p>`;
+  }
+  return `
+    <div id="vq-add-section" style="margin-bottom:12px">
+      <button id="vq-add-btn" class="button small" type="button">+ Add volunteer</button>
+      <form id="vq-add-form" hidden>
+        <div class="vq-inline-form-row" style="margin-top:8px">
+          <div class="vq-assign-inputs" style="flex-wrap:wrap">
+            <input id="vq-add-first" type="text" placeholder="First name" style="flex:1;min-width:90px" autocomplete="given-name" />
+            <input id="vq-add-last" type="text" placeholder="Last name" style="flex:1;min-width:90px" autocomplete="family-name" />
+            <input id="vq-add-phone" type="tel" placeholder="Phone (optional)" style="flex:1;min-width:90px" />
+            <button type="submit" class="button small primary" id="vq-add-submit">Add to queue</button>
+            <button type="button" class="button small" id="vq-add-cancel">Cancel</button>
+          </div>
+          <p id="vq-add-error" class="notice danger" style="margin-top:6px" hidden></p>
+        </div>
+      </form>
+    </div>
+    <div id="volunteerQueue">${_renderQueueContents()}</div>`;
+}
+
 function _renderQueueContents() {
-  if (!store.positionsKey) return '<p class="muted">Enter location key above to load volunteer queue.</p>';
   if (!_cachedVolunteers.length) return '<p class="muted">No volunteers registered yet.</p>';
-  return `<ul class="volunteer-queue-list">${_cachedVolunteers.map(_renderVolunteerRow).join("")}</ul>`;
+
+  const active     = _cachedVolunteers.filter(v => v.status !== "completed" && v.status !== "found");
+  const unassigned = active.filter(v => !v.assignedCell);
+  const assigned   = active.filter(v =>  v.assignedCell);
+  const done       = _cachedVolunteers.filter(v => v.status === "completed" || v.status === "found");
+
+  let html = "";
+
+  if (unassigned.length) {
+    html += `
+      <div class="queue-section-header queue-needs-grid">
+        <span>Needs Grid</span><span class="queue-badge">${unassigned.length}</span>
+      </div>
+      <ul class="volunteer-queue-list">${unassigned.map(_renderVolunteerRow).join("")}</ul>`;
+  } else {
+    html += `<p class="muted tight" style="margin:8px 0">No unassigned volunteers waiting.</p>`;
+  }
+
+  if (assigned.length) {
+    html += `
+      <div class="queue-section-header queue-deployed" style="margin-top:16px">
+        <span>Deployed</span><span class="queue-badge">${assigned.length}</span>
+      </div>
+      <ul class="volunteer-queue-list">${assigned.map(_renderVolunteerRow).join("")}</ul>`;
+  }
+
+  if (done.length) {
+    html += `
+      <div class="queue-section-header queue-done" style="margin-top:16px">
+        <span>Done / Found</span><span class="queue-badge">${done.length}</span>
+      </div>
+      <ul class="volunteer-queue-list">${done.map(_renderVolunteerRow).join("")}</ul>`;
+  }
+
+  return html;
 }
 
 // Called by panel.js after bindCommandPanel so queue actions work immediately.
 export function bindVolunteerQueueActions() {
   const container = document.getElementById("volunteerQueue");
   if (container) _bindQueueActions(container);
+  _bindAddVolunteerForm();
 }
 
 export async function loadVolunteerQueue(force = false) {
@@ -80,12 +139,15 @@ export async function loadVolunteerQueue(force = false) {
     }
     // Rebuild assigned-cells overlay so the map highlights reserved squares.
     const assigned = new Map();
+    const infoMap = new Map();
     _cachedVolunteers.forEach((v) => {
       if (v.assignedCell && v.status !== "completed" && v.status !== "found") {
         assigned.set(v.assignedCell, `${v.firstName} ${v.lastName}`.trim());
       }
+      infoMap.set(v.id, { firstName: v.firstName, lastName: v.lastName, phone: v.phone || "", email: v.email || "" });
     });
     store.assignedCells = assigned;
+    store.volunteerInfoMap = infoMap;
     document.dispatchEvent(new CustomEvent("esti:grid-update"));
   } catch { /* silent — stale cache stays visible */ }
 }
@@ -97,6 +159,10 @@ function _renderVolunteerRow(v) {
   const cell = v.assignedCell ? escapeHtml(v.assignedCell) : null;
   const emailLink = v.email && v.trackingUrl && v.assignedCell ? buildEmailLink(v) : "";
   const canAssign = v.status !== "completed" && v.status !== "found";
+
+  const manualBadge = v.dispatcherAdded
+    ? `<span class="vq-manual-badge">Manual</span>`
+    : "";
 
   const latestNote = Array.isArray(v.notes) && v.notes.length
     ? v.notes[v.notes.length - 1]
@@ -121,11 +187,13 @@ function _renderVolunteerRow(v) {
         ${phone ? `<a href="tel:${escapeAttr(v.phone)}" class="vq-call">${phone}</a>` : ""}
         <span class="vq-status status-pill ${_statusClass(v.status)}">${status}</span>
         ${cell ? `<span class="vq-cell">Grid ${cell}</span>` : ""}
+        ${manualBadge}
       </div>
       ${noteHtml}
       <div class="vq-actions">
         ${canAssign ? `<button class="button small vq-assign-btn" data-vol-id="${escapeAttr(v.id)}" type="button">${cell ? "Change grid" : "Assign grid"}</button>` : ""}
         ${cell && canAssign ? `<button class="button small vq-remove-btn" data-vol-id="${escapeAttr(v.id)}" type="button">Remove</button>` : ""}
+        ${!cell && canAssign ? `<button class="button small danger vq-delete-btn" data-vol-id="${escapeAttr(v.id)}" type="button">Delete</button>` : ""}
         ${smsLink   ? `<a href="${escapeAttr(smsLink)}"   class="button primary small vq-send">SMS</a>` : ""}
         ${emailLink ? `<a href="${escapeAttr(emailLink)}" class="button small vq-send">Email</a>` : ""}
         ${v.assignedCell && v.trackingUrl ? `<button class="button small vq-copy-btn" data-vol-id="${escapeAttr(v.id)}" type="button">Copy</button>` : ""}
@@ -134,12 +202,76 @@ function _renderVolunteerRow(v) {
   `;
 }
 
+function _bindAddVolunteerForm() {
+  const addBtn = document.getElementById("vq-add-btn");
+  const addForm = document.getElementById("vq-add-form");
+  const cancelBtn = document.getElementById("vq-add-cancel");
+  if (!addBtn || !addForm) return;
+
+  addBtn.addEventListener("click", () => {
+    addForm.hidden = !addForm.hidden;
+    if (!addForm.hidden) document.getElementById("vq-add-first")?.focus();
+  });
+  cancelBtn?.addEventListener("click", () => { addForm.hidden = true; });
+  addForm.addEventListener("submit", _submitAddVolunteer);
+}
+
+async function _submitAddVolunteer(e) {
+  e.preventDefault();
+  const btn = document.getElementById("vq-add-submit");
+  const errEl = document.getElementById("vq-add-error");
+  const firstName = document.getElementById("vq-add-first")?.value.trim() || "";
+  const lastName = document.getElementById("vq-add-last")?.value.trim() || "";
+  const phone = document.getElementById("vq-add-phone")?.value.trim() || "";
+
+  if (!firstName || !lastName) {
+    if (errEl) { errEl.textContent = "First and last name are required."; errEl.hidden = false; }
+    return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = "Adding…";
+  if (errEl) errEl.hidden = true;
+
+  try {
+    const searchParam = SEARCH_ID || "default";
+    const res = await fetch(INTAKE_API, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        firstName,
+        lastName,
+        phone,
+        searchId: searchParam,
+        dispatcherAdded: true,
+        dispatchKey: store.positionsKey,
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok || !data.ok) throw new Error(data.error || "Could not add volunteer.");
+    document.getElementById("vq-add-form").hidden = true;
+    document.getElementById("vq-add-first").value = "";
+    document.getElementById("vq-add-last").value = "";
+    document.getElementById("vq-add-phone").value = "";
+    showToast(`${firstName} ${lastName} added to queue.`);
+    _lastQueueFetch = 0;
+    await loadVolunteerQueue(true);
+  } catch (err) {
+    if (errEl) { errEl.textContent = err.message || "Could not add volunteer."; errEl.hidden = false; }
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = "Add to queue"; }
+  }
+}
+
 function _bindQueueActions(container) {
   container.querySelectorAll(".vq-assign-btn").forEach((btn) => {
     btn.addEventListener("click", () => _showAssignForm(btn.dataset.volId, container));
   });
   container.querySelectorAll(".vq-remove-btn").forEach((btn) => {
     btn.addEventListener("click", () => _removeAssignment(btn.dataset.volId, container));
+  });
+  container.querySelectorAll(".vq-delete-btn").forEach((btn) => {
+    btn.addEventListener("click", () => _deleteVolunteer(btn.dataset.volId));
   });
   container.querySelectorAll(".vq-copy-btn").forEach((btn) => {
     btn.addEventListener("click", () => _copyAssignmentText(btn.dataset.volId, btn));
@@ -166,6 +298,23 @@ function _showAssignForm(volunteerId, container) {
   pill.textContent = "Tap a cell on the map…";
   row?.querySelector(".vq-actions")?.prepend(pill);
 
+  // Pan to volunteer's last GPS ping and show a pulsing highlight.
+  let _pulseMarker = null;
+  const pos = store.volunteerPositions?.get(volunteerId);
+  if (pos && store.map) {
+    store.map.setView([pos.lat, pos.lng], Math.max(store.map.getZoom(), 15), { animate: true });
+    _pulseMarker = L.marker([pos.lat, pos.lng], {
+      interactive: false,
+      icon: L.divIcon({
+        className: "vol-assign-pulse-icon",
+        html: `<span class="vol-assign-pulse"></span>`,
+        iconSize: [36, 36],
+        iconAnchor: [18, 18],
+      }),
+      zIndexOffset: 2000,
+    }).addTo(store.map);
+  }
+
   function onPicked(e) {
     cleanup();
     _submitAssign(volunteerId, String(e.detail).toUpperCase(), container);
@@ -177,6 +326,7 @@ function _showAssignForm(volunteerId, container) {
     document.removeEventListener("esti:cell-pick-cancelled", onCancelled);
     exitCellPickingMode();
     document.getElementById("vq-picking-pill")?.remove();
+    if (_pulseMarker) { _pulseMarker.remove(); _pulseMarker = null; }
   }
 
   document.addEventListener("esti:cell-picked", onPicked, { once: true });
@@ -247,6 +397,28 @@ async function _removeAssignment(volunteerId, container) {
     await loadVolunteerQueue(true);
   } catch (err) {
     showToast(err.message || "Could not remove assignment.");
+  }
+}
+
+async function _deleteVolunteer(volunteerId) {
+  const v = _cachedVolunteers.find((x) => x.id === volunteerId);
+  const name = v ? `${v.firstName} ${v.lastName}` : "this volunteer";
+  if (!window.confirm(`Remove ${name} from the queue? This cannot be undone.`)) return;
+  showToast("Removing…");
+  try {
+    const searchParam = SEARCH_ID || "default";
+    const res = await fetch(INTAKE_API, {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ volunteerId, searchId: searchParam, dispatchKey: store.positionsKey }),
+    });
+    const data = await res.json();
+    if (!res.ok || !data.ok) throw new Error(data.error || "Delete failed");
+    showToast(`${name} removed from queue.`);
+    _lastQueueFetch = 0;
+    await loadVolunteerQueue(true);
+  } catch (err) {
+    showToast(err.message || "Could not remove volunteer.");
   }
 }
 
@@ -382,6 +554,7 @@ export async function enterDispatcherMode(event) {
     if (data.positionsKey) {
       store.positionsKey = data.positionsKey;
       localStorage.setItem(POSITIONS_KEY_STORE, data.positionsKey);
+      fetchVolunteerPositions(); // pull positions immediately instead of waiting up to 30s
     }
   } catch (err) {
     const isTimeout = err.name === "TimeoutError" || err.name === "AbortError";
@@ -408,6 +581,12 @@ export async function enterDispatcherMode(event) {
 
 export function renderLocationKeyControl() {
   const unlocked = Boolean(store.positionsKey);
+  const status = store.positionFeedStatus || (unlocked ? "checking" : "locked");
+  const message = store.positionFeedMessage || (
+    unlocked
+      ? "Checking location feed..."
+      : "Location feed locked. Enter the dispatcher location key to show GPS pings."
+  );
   return `
     <h3>Live volunteer map</h3>
     <p class="muted tight">Volunteer GPS locations are private. Enter the dispatcher location key to show them on the map.</p>
@@ -417,7 +596,7 @@ export function renderLocationKeyControl() {
       </label>
       <button id="positionsKeyBtn" class="button active" type="button">${unlocked ? "Update" : "Unlock"}</button>
     </div>
-    ${unlocked ? '<p class="notice success">Location feed unlocked on this device.</p>' : ""}
+    <p id="positionFeedStatus" class="notice position-feed-status position-feed-status--${escapeAttr(status)}">${escapeHtml(message)}</p>
   `;
 }
 
